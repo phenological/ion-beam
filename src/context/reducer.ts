@@ -3,14 +3,16 @@ import type { PeakOptions } from "quantion";
 import type { Point } from "../ms/eic";
 import type { Peak } from "../ms/peaks";
 import type { Compound } from "../data/compounds";
-import { defaultMz, defaultPath, timeRange } from "../data/targets";
+import { findDataset } from "../data/datasets";
+import { defaultMz, defaultPaths } from "../data/targets";
 import { readPaths } from "../utilities/savedPaths";
 import { isWideScreen } from "../utilities/screen";
-import { toRawFolder } from "../ms/github";
+import type { Entry } from "../ms/listSamples";
+
 export interface SamplesState {
   path: string;
   status: "ok" | "error";
-  names?: string[];
+  entries?: Entry[];
   message?: string;
 }
 
@@ -32,6 +34,13 @@ export interface Peaks {
   list: Peak[];
 }
 
+export interface CompoundSet {
+  id: string;
+  status: "ok" | "error";
+  list?: Compound[];
+  message?: string;
+}
+
 export interface AddedSample {
   name: string;
   styleIndex: number;
@@ -40,6 +49,7 @@ export interface AddedSample {
 export interface State {
   path: string;
   savedPaths: string[];
+  folderStack: string[];
   pickedSample: string | null;
   addedSamples: AddedSample[];
   mzText: string;
@@ -70,14 +80,17 @@ export interface State {
   files: Record<string, FileState>;
   outcomes: Record<string, Outcome>;
   peaks: Peaks | null;
+  compoundSet: CompoundSet | null;
 }
 
-const startPaths = readPaths([defaultPath]);
+const startPaths = readPaths(defaultPaths);
 const startsWide = isWideScreen();
+const startDataset = findDataset(startPaths[0] ?? "");
 
 export const initialState: State = {
   path: startPaths[0] ?? "",
   savedPaths: startPaths,
+  folderStack: [],
   pickedSample: null,
   addedSamples: [],
   mzText: String(defaultMz),
@@ -100,19 +113,24 @@ export const initialState: State = {
   annotate: true,
   displayBaseline: false,
   autoPeakPicking: true,
-  rtFrom: timeRange.from,
-  rtTo: timeRange.to,
+  rtFrom: startDataset.rtRange.from,
+  rtTo: startDataset.rtRange.to,
   ppm: 20,
   mzTol: 0.005,
   samples: null,
   files: {},
   outcomes: {},
   peaks: null,
+  compoundSet: startDataset.file
+    ? null
+    : { id: startDataset.id, status: "ok", list: startDataset.list },
 };
 
 export type Action =
   | { type: "reloadSamples" }
   | { type: "setPath"; path: string }
+  | { type: "openFolder"; path: string }
+  | { type: "goUp" }
   | { type: "addPath"; path: string }
   | { type: "removePath"; path: string }
   | { type: "pickSample"; name: string }
@@ -137,16 +155,19 @@ export type Action =
   | { type: "toggleAutoPeakPicking" }
   | { type: "setRtFrom"; value: number }
   | { type: "setRtTo"; value: number }
+  | { type: "setRtRange"; from: number; to: number }
   | { type: "setPpm"; value: number }
   | { type: "setMzTol"; value: number }
-  | { type: "samplesLoaded"; path: string; names: string[] }
+  | { type: "samplesLoaded"; path: string; entries: Entry[] }
   | { type: "samplesFailed"; path: string; message: string }
   | { type: "fileOpened"; url: string }
   | { type: "fileFailed"; url: string; message: string }
   | { type: "fileClosed"; url: string }
   | { type: "eicReady"; url: string; key: string; points: Point[] }
   | { type: "eicFailed"; url: string; key: string; message: string }
-  | { type: "peaksFound"; key: string; list: Peak[] };
+  | { type: "peaksFound"; key: string; list: Peak[] }
+  | { type: "compoundsLoaded"; id: string; list: Compound[] }
+  | { type: "compoundsFailed"; id: string; message: string };
 
 const minPanelWidth = 220;
 const maxPanelWidth = 560;
@@ -213,6 +234,8 @@ export function reducer(state: State, action: Action): State {
         break;
       case "setPath":
         draft.path = action.path;
+        draft.folderStack = [];
+        draft.pickedSample = null;
         draft.addedSamples = [];
         draft.pickedMz = null;
         draft.pickedLabel = null;
@@ -228,6 +251,27 @@ export function reducer(state: State, action: Action): State {
       case "removePath": {
         draft.savedPaths = draft.savedPaths.filter((item) => item !== action.path);
         draft.path = "";
+        draft.folderStack = [];
+        draft.pickedSample = null;
+        draft.addedSamples = [];
+        draft.pickedMz = null;
+        draft.pickedLabel = null;
+        draft.targetRt = null;
+        break;
+      }
+      case "openFolder":
+        draft.folderStack.push(draft.path);
+        draft.path = action.path;
+        draft.pickedSample = null;
+        draft.addedSamples = [];
+        draft.pickedMz = null;
+        draft.pickedLabel = null;
+        draft.targetRt = null;
+        break;
+      case "goUp": {
+        const previous = draft.folderStack.pop();
+        if (previous === undefined) break;
+        draft.path = previous;
         draft.pickedSample = null;
         draft.addedSamples = [];
         draft.pickedMz = null;
@@ -316,6 +360,10 @@ export function reducer(state: State, action: Action): State {
       case "setRtTo":
         draft.rtTo = action.value;
         break;
+      case "setRtRange":
+        draft.rtFrom = action.from;
+        draft.rtTo = action.to;
+        break;
       case "setPpm":
         draft.ppm = action.value;
         break;
@@ -332,7 +380,7 @@ export function reducer(state: State, action: Action): State {
         draft.samples = {
           path: action.path,
           status: "ok",
-          names: action.names,
+          entries: action.entries,
         };
         break;
       case "samplesFailed":
@@ -372,6 +420,16 @@ export function reducer(state: State, action: Action): State {
         break;
       case "peaksFound":
         draft.peaks = { key: action.key, list: action.list };
+        break;
+      case "compoundsLoaded":
+        draft.compoundSet = { id: action.id, status: "ok", list: action.list };
+        break;
+      case "compoundsFailed":
+        draft.compoundSet = {
+          id: action.id,
+          status: "error",
+          message: action.message,
+        };
         break;
     }
   });
@@ -420,19 +478,21 @@ export function readError(error: unknown): string {
   return String(error);
 }
 
-export function withSlash(value: string): string {
-  return value.endsWith("/") ? value : `${value}/`;
-}
-
 export function activePath(state: State): string {
   return state.path;
 }
 
+export function datasetPath(state: Pick<State, "path" | "folderStack">): string {
+  return state.folderStack[0] ?? state.path;
+}
+
 const emptyNames: string[] = [];
+const emptyEntries: Entry[] = [];
 const emptyPoints: Point[] = [];
 const emptyPeaks: Peak[] = [];
 const emptyUrls: string[] = [];
 const emptyTraces: Trace[] = [];
+const emptyCompounds: Compound[] = [];
 
 export type TraceStatus = "idle" | "loading" | "ready" | "failed";
 
@@ -455,10 +515,25 @@ export type TraceInput = SelectionInput &
   EicSettings &
   Pick<State, "pickedMz" | "files" | "outcomes">;
 
+function readEntries(input: SelectionInput): Entry[] {
+  if (input.samples?.path !== input.path) return emptyEntries;
+  if (input.samples.status !== "ok") return emptyEntries;
+  return input.samples.entries ?? emptyEntries;
+}
+
+function readSampleEntries(input: SelectionInput): Entry[] {
+  return readEntries(input).filter((entry) => entry.kind === "sample");
+}
+
 function readNames(input: SelectionInput): string[] {
-  if (input.samples?.path !== input.path) return emptyNames;
-  if (input.samples.status !== "ok") return emptyNames;
-  return input.samples.names ?? emptyNames;
+  const found = readSampleEntries(input);
+  return found.length === 0 ? emptyNames : found.map((entry) => entry.name);
+}
+
+function readUrls(input: SelectionInput): Map<string, string> {
+  const urls = new Map<string, string>();
+  for (const entry of readSampleEntries(input)) urls.set(entry.name, entry.url);
+  return urls;
 }
 
 function readMainSample(input: SelectionInput, names: string[]): string | null {
@@ -494,25 +569,38 @@ function readTraceStatus(
   return "loading";
 }
 
+export function selectSampleNames(
+  input: Pick<State, "path" | "samples">,
+): Record<string, string> {
+  const names: Record<string, string> = {};
+  for (const entry of readSampleEntries(input as SelectionInput)) {
+    names[entry.url] = entry.name;
+  }
+  return names;
+}
+
 export function selectOpenUrls(input: SelectionInput): string[] {
   const names = readNames(input);
   const main = readMainSample(input, names);
   if (!main) return emptyUrls;
-  const folder = withSlash(toRawFolder(input.path));
-  return readShownSamples(input, names, main).map(
-    (shown) => folder + shown.name,
-  );
+  const urls = readUrls(input);
+  const found: string[] = [];
+  for (const shown of readShownSamples(input, names, main)) {
+    const url = urls.get(shown.name);
+    if (url) found.push(url);
+  }
+  return found;
 }
 
 export function selectTraces(input: TraceInput): Trace[] {
   const names = readNames(input);
   const main = readMainSample(input, names);
   if (!main) return emptyTraces;
-  const folder = withSlash(toRawFolder(input.path));
+  const urls = readUrls(input);
   const mz = input.pickedMz;
 
   return readShownSamples(input, names, main).map((shown) => {
-    const url = folder + shown.name;
+    const url = urls.get(shown.name) ?? "";
     const file = input.files[url];
     const stored = input.outcomes[url];
     const outcome =
@@ -534,6 +622,7 @@ export interface View {
   samplesFailed: boolean;
   samplesLoading: boolean;
   samples: string[];
+  folders: Entry[];
   samplesMessage?: string;
   mainSample: string | null;
   mainUrl: string | null;
@@ -553,14 +642,14 @@ export function selectView(state: State): View {
     samplesAtPath && state.samples?.status === "error",
   );
   const samplesLoading = !samplesReady && !samplesFailed;
-  const samples = samplesReady
-    ? (state.samples?.names ?? emptyNames)
-    : emptyNames;
+  const entries = samplesReady ? readEntries(state) : emptyEntries;
+  const samples = samplesReady ? readNames(state) : emptyNames;
+  const folders = samplesReady
+    ? entries.filter((entry) => entry.kind === "folder")
+    : emptyEntries;
 
   const mainSample = readMainSample(state, samples);
-  const mainUrl = mainSample
-    ? withSlash(toRawFolder(path)) + mainSample
-    : null;
+  const mainUrl = mainSample ? (readUrls(state).get(mainSample) ?? null) : null;
 
   const mz = state.pickedMz;
   const mainKey =
@@ -581,6 +670,7 @@ export function selectView(state: State): View {
     samplesFailed,
     samplesLoading,
     samples,
+    folders,
     samplesMessage: state.samples?.message,
     mainSample,
     mainUrl,
@@ -590,5 +680,30 @@ export function selectView(state: State): View {
     mz,
     peaks,
     peaksReady,
+  };
+}
+
+export interface CompoundView {
+  id: string;
+  label: string;
+  list: Compound[];
+  loading: boolean;
+  failed: boolean;
+  message?: string;
+}
+
+export function selectCompounds(
+  state: Pick<State, "path" | "folderStack" | "compoundSet">,
+): CompoundView {
+  const dataset = findDataset(datasetPath(state));
+  const loaded =
+    state.compoundSet?.id === dataset.id ? state.compoundSet : null;
+  return {
+    id: dataset.id,
+    label: dataset.label,
+    list: loaded?.status === "ok" ? (loaded.list ?? emptyCompounds) : emptyCompounds,
+    loading: loaded === null,
+    failed: loaded?.status === "error",
+    message: loaded?.message,
   };
 }

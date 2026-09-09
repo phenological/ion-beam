@@ -1,9 +1,9 @@
 import { useMemo } from "react";
-import { compounds } from "./data/compounds";
 import { getPeaks } from "./ms/peaks";
 import { getBaseline } from "./ms/baseline";
 import { PathInput } from "./components/PathInput";
 import { SampleList } from "./components/SampleList";
+import { FolderList } from "./components/FolderList";
 import { CompoundList } from "./components/CompoundList";
 import { ConfigPanel } from "./components/ConfigPanel";
 import { EicPlot } from "./components/EicPlot";
@@ -12,7 +12,12 @@ import { ResizeHandle } from "./components/ResizeHandle";
 import { InspectPanel } from "./components/InspectPanel";
 import { TraceLegend } from "./components/TraceLegend";
 import { useAppDispatch, useAppState } from "./context/context";
-import { activePath, peakOptions, selectView } from "./context/reducer";
+import {
+  activePath,
+  peakOptions,
+  selectCompounds,
+  selectView,
+} from "./context/reducer";
 import { useTraces } from "./context/useTraces";
 import "./App.css";
 
@@ -32,6 +37,7 @@ function App() {
   const state = useAppState();
   const dispatch = useAppDispatch();
   const view = selectView(state);
+  const metabolites = selectCompounds(state);
   const traces = useTraces(state);
 
   const sampleColors = useMemo(() => {
@@ -101,11 +107,17 @@ function App() {
             )}
             {view.samplesLoading && <p className="banner">Loading samples…</p>}
             {!view.samplesLoading && !view.samplesFailed && (
-              <SampleList
-                samples={view.samples}
-                mainSample={view.mainSample}
-                sampleColors={sampleColors}
-              />
+              <>
+                <FolderList
+                  folders={view.folders}
+                  canGoUp={state.folderStack.length > 0}
+                />
+                <SampleList
+                  samples={view.samples}
+                  mainSample={view.mainSample}
+                  sampleColors={sampleColors}
+                />
+              </>
             )}
           </div>
         )}
@@ -150,7 +162,7 @@ function App() {
               onClick={() => dispatch({ type: "toggleMetabolites" })}
             >
               Metabolites
-              <span className="sheet-button-count">{compounds.length}</span>
+              <span className="sheet-button-count">{metabolites.list.length}</span>
             </button>
           </div>
         </header>
@@ -216,16 +228,27 @@ function App() {
             {state.metabolitesOpen ? "›" : "‹"}
           </button>
           {state.metabolitesOpen && (
-            <span className="sidebar-label">Metabolites</span>
+            <span className="sidebar-label" title={metabolites.label}>
+              Metabolites
+            </span>
           )}
           {state.metabolitesOpen && (
-            <span className="sidebar-count">{compounds.length}</span>
+            <span className="sidebar-count">{metabolites.list.length}</span>
           )}
         </div>
         {state.metabolitesOpen && (
           <div className="sidebar-body">
             <ConfigPanel />
-            <CompoundList compounds={compounds} selectedLabel={state.pickedLabel} />
+            {metabolites.failed && (
+              <p className="banner banner-error">
+                Could not load the metabolite list: {metabolites.message}
+              </p>
+            )}
+            {metabolites.loading && <p className="banner">Loading metabolites…</p>}
+            <CompoundList
+              compounds={metabolites.list}
+              selectedLabel={state.pickedLabel}
+            />
           </div>
         )}
       </aside>

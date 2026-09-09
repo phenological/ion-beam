@@ -2,7 +2,7 @@ export interface Compound {
   label: string;
   rt: number;
   mz: number;
-  sd: number;
+  sd?: number;
   MF?: string;
 }
 

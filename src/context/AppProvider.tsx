@@ -1,13 +1,16 @@
 import { useEffect, useReducer, type ReactNode } from "react";
+import { findDataset } from "../data/datasets";
+import { getTruthSet } from "../data/truthSet";
 import { getSamples } from "../ms/listSamples";
 import { getPeaks } from "../ms/peaks";
 import { writePaths } from "../utilities/savedPaths";
 import { watchWideScreen } from "../utilities/screen";
 import { DispatchContext, StateContext } from "./context";
 import { SampleLoader } from "./SampleLoader";
-import { useOpenUrls } from "./useTraces";
+import { useOpenUrls, useSampleNames } from "./useTraces";
 import {
   activePath,
+  datasetPath,
   initialState,
   peakOptions,
   readError,
@@ -22,7 +25,8 @@ interface AppProviderProps {
 export function AppProvider({ children }: AppProviderProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  const { samples, savedPaths } = state;
+  const { samples, savedPaths, compoundSet } = state;
+  const dataset = findDataset(datasetPath(state));
 
   useEffect(() => {
     writePaths(savedPaths);
@@ -50,17 +54,18 @@ export function AppProvider({ children }: AppProviderProps) {
   const path = activePath(state);
   const { mainKey, mainPoints, mainReady, mz } = selectView(state);
   const openUrls = useOpenUrls(state);
+  const sampleNames = useSampleNames(state);
 
   useEffect(() => {
     if (samples && samples.path === path) return undefined;
     if (path.trim().length === 0) {
-      dispatch({ type: "samplesLoaded", path, names: [] });
+      dispatch({ type: "samplesLoaded", path, entries: [] });
       return undefined;
     }
     let active = true;
     getSamples(path)
-      .then((names) => {
-        if (active) dispatch({ type: "samplesLoaded", path, names });
+      .then((entries) => {
+        if (active) dispatch({ type: "samplesLoaded", path, entries });
       })
       .catch((error: unknown) => {
         if (active)
@@ -70,6 +75,42 @@ export function AppProvider({ children }: AppProviderProps) {
       active = false;
     };
   }, [path, samples]);
+
+  useEffect(() => {
+    dispatch({
+      type: "setRtRange",
+      from: dataset.rtRange.from,
+      to: dataset.rtRange.to,
+    });
+  }, [dataset]);
+
+  useEffect(() => {
+    if (compoundSet?.id === dataset.id) return undefined;
+    if (!dataset.file) {
+      dispatch({
+        type: "compoundsLoaded",
+        id: dataset.id,
+        list: dataset.list ?? [],
+      });
+      return undefined;
+    }
+    let active = true;
+    getTruthSet(dataset)
+      .then((list) => {
+        if (active) dispatch({ type: "compoundsLoaded", id: dataset.id, list });
+      })
+      .catch((error: unknown) => {
+        if (active)
+          dispatch({
+            type: "compoundsFailed",
+            id: dataset.id,
+            message: readError(error),
+          });
+      });
+    return () => {
+      active = false;
+    };
+  }, [dataset, compoundSet]);
 
   useEffect(() => {
     if (!autoPeakPicking || !mainReady || mainKey === null) return;
@@ -105,6 +146,7 @@ export function AppProvider({ children }: AppProviderProps) {
           <SampleLoader
             key={url}
             url={url}
+            name={sampleNames[url] ?? url}
             mz={mz}
             rtFrom={rtFrom}
             rtTo={rtTo}
