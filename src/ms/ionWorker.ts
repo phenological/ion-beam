@@ -1,5 +1,5 @@
 import { calculateEic, type SampleFile } from "quantion";
-import { openIonFile } from "./ionFile";
+import { openIonFile, openSampleBytes } from "./ionFile";
 import { forgetSample, getTraffic, subscribe, watchSample } from "./traffic";
 import type { WorkerScope } from "./workerMessages";
 
@@ -33,10 +33,15 @@ function waitForTasks(url: string): Promise<void> {
   return Promise.allSettled([...tasks]).then(() => undefined);
 }
 
-async function open(id: number, url: string, name: string): Promise<void> {
+async function open(
+  id: number,
+  url: string,
+  name: string,
+  bytes?: ArrayBuffer,
+): Promise<void> {
   watchSample(url, name);
   try {
-    const file = await openIonFile(url);
+    const file = bytes ? await openSampleBytes(bytes, name) : await openIonFile(url);
     if (!files.has(url)) files.set(url, file);
     else file.dispose?.();
     worker.postMessage({ id, type: "opened" });
@@ -86,7 +91,7 @@ function close(url: string): void {
 worker.addEventListener("message", (event) => {
   const ask = event.data;
   if (ask.type === "open") {
-    void open(ask.id, ask.url, ask.name);
+    void open(ask.id, ask.url, ask.name, ask.bytes);
     return;
   }
   if (ask.type === "eic") {

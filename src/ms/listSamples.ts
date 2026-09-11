@@ -18,6 +18,7 @@ import {
   toObjectUrl,
   type BucketFolder,
 } from "./storage";
+import { isUploadFolder, listUpload } from "./uploads";
 
 export type EntryKind = "sample" | "folder";
 
@@ -54,6 +55,7 @@ interface BucketPage {
 }
 
 export async function getSamples(path: string): Promise<Entry[]> {
+  if (isUploadFolder(path)) return listUpload(path);
   if (isDriveFolder(path)) return getDriveEntries(path);
   if (isBucketFolder(path)) return getBucketEntries(path);
   return getWebEntries(path);

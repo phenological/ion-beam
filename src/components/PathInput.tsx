@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { useAppDispatch } from "../context/context";
+import { isUploadFolder } from "../ms/uploads";
 
 interface PathInputProps {
   path: string;
@@ -25,7 +26,7 @@ export const PathInput = memo(function PathInput({ path, saved }: PathInputProps
           type="button"
           className="path-button"
           title="Save this URL"
-          disabled={clean.length === 0 || known}
+          disabled={clean.length === 0 || known || isUploadFolder(clean)}
           onClick={() => dispatch({ type: "addPath", path: clean })}
         >
           +

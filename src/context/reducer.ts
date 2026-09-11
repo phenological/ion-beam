@@ -81,6 +81,8 @@ export interface State {
   outcomes: Record<string, Outcome>;
   peaks: Peaks | null;
   compoundSet: CompoundSet | null;
+  compoundEdits: Record<string, Compound[]>;
+  uploadStatus: { status: "reading" } | { status: "error"; message: string } | null;
 }
 
 const startPaths = readPaths(defaultPaths);
@@ -124,6 +126,8 @@ export const initialState: State = {
   compoundSet: startDataset.file
     ? null
     : { id: startDataset.id, status: "ok", list: startDataset.list },
+  compoundEdits: {},
+  uploadStatus: null,
 };
 
 export type Action =
@@ -167,7 +171,13 @@ export type Action =
   | { type: "eicFailed"; url: string; key: string; message: string }
   | { type: "peaksFound"; key: string; list: Peak[] }
   | { type: "compoundsLoaded"; id: string; list: Compound[] }
-  | { type: "compoundsFailed"; id: string; message: string };
+  | { type: "compoundsFailed"; id: string; message: string }
+  | { type: "addCompound"; compound: Compound }
+  | { type: "updateCompound"; original: string; compound: Compound }
+  | { type: "removeCompound"; label: string }
+  | { type: "replaceCompounds"; list: Compound[] }
+  | { type: "uploadStarted" }
+  | { type: "uploadFailed"; message: string };
 
 const minPanelWidth = 220;
 const maxPanelWidth = 560;
@@ -226,6 +236,19 @@ function findFreeStyle(added: AddedSample[]): number {
   return index;
 }
 
+function getDatasetId(draft: State): string {
+  return findDataset(datasetPath(draft)).id;
+}
+
+function getWorkingList(draft: State): Compound[] {
+  const id = getDatasetId(draft);
+  if (!draft.compoundEdits[id]) {
+    const loaded = draft.compoundSet?.id === id ? draft.compoundSet.list : undefined;
+    draft.compoundEdits[id] = loaded ? [...loaded] : [];
+  }
+  return draft.compoundEdits[id];
+}
+
 export function reducer(state: State, action: Action): State {
   return produce(state, (draft: State) => {
     switch (action.type) {
@@ -240,6 +263,7 @@ export function reducer(state: State, action: Action): State {
         draft.pickedMz = null;
         draft.pickedLabel = null;
         draft.targetRt = null;
+        draft.uploadStatus = null;
         break;
       case "addPath": {
         const path = action.path.trim();
@@ -257,6 +281,7 @@ export function reducer(state: State, action: Action): State {
         draft.pickedMz = null;
         draft.pickedLabel = null;
         draft.targetRt = null;
+        draft.uploadStatus = null;
         break;
       }
       case "openFolder":
@@ -267,6 +292,7 @@ export function reducer(state: State, action: Action): State {
         draft.pickedMz = null;
         draft.pickedLabel = null;
         draft.targetRt = null;
+        draft.uploadStatus = null;
         break;
       case "goUp": {
         const previous = draft.folderStack.pop();
@@ -277,6 +303,7 @@ export function reducer(state: State, action: Action): State {
         draft.pickedMz = null;
         draft.pickedLabel = null;
         draft.targetRt = null;
+        draft.uploadStatus = null;
         break;
       }
       case "pickSample":
@@ -430,6 +457,55 @@ export function reducer(state: State, action: Action): State {
           status: "error",
           message: action.message,
         };
+        break;
+      case "addCompound": {
+        const list = getWorkingList(draft);
+        list.unshift(action.compound);
+        break;
+      }
+      case "updateCompound": {
+        const list = getWorkingList(draft);
+        const at = list.findIndex((compound) => compound.label === action.original);
+        if (at === -1) break;
+        list[at] = action.compound;
+        if (draft.pickedLabel === action.original) {
+          draft.pickedLabel = action.compound.label;
+          draft.pickedMz = action.compound.mz;
+          draft.targetRt = action.compound.rt;
+          draft.mzText = String(action.compound.mz);
+        }
+        break;
+      }
+      case "removeCompound": {
+        const list = getWorkingList(draft);
+        const at = list.findIndex((compound) => compound.label === action.label);
+        if (at === -1) break;
+        list.splice(at, 1);
+        if (draft.pickedLabel === action.label) {
+          draft.pickedLabel = null;
+          draft.targetRt = null;
+        }
+        break;
+      }
+      case "replaceCompounds": {
+        const id = getDatasetId(draft);
+        draft.compoundEdits[id] = action.list;
+        if (draft.pickedLabel !== null) {
+          const stillThere = action.list.some(
+            (compound) => compound.label === draft.pickedLabel,
+          );
+          if (!stillThere) {
+            draft.pickedLabel = null;
+            draft.targetRt = null;
+          }
+        }
+        break;
+      }
+      case "uploadStarted":
+        draft.uploadStatus = { status: "reading" };
+        break;
+      case "uploadFailed":
+        draft.uploadStatus = { status: "error", message: action.message };
         break;
     }
   });
@@ -693,17 +769,19 @@ export interface CompoundView {
 }
 
 export function selectCompounds(
-  state: Pick<State, "path" | "folderStack" | "compoundSet">,
+  state: Pick<State, "path" | "folderStack" | "compoundSet" | "compoundEdits">,
 ): CompoundView {
   const dataset = findDataset(datasetPath(state));
   const loaded =
     state.compoundSet?.id === dataset.id ? state.compoundSet : null;
+  const edited = state.compoundEdits[dataset.id];
+  const list = edited ?? (loaded?.status === "ok" ? loaded.list : undefined);
   return {
     id: dataset.id,
     label: dataset.label,
-    list: loaded?.status === "ok" ? (loaded.list ?? emptyCompounds) : emptyCompounds,
-    loading: loaded === null,
-    failed: loaded?.status === "error",
+    list: list ?? emptyCompounds,
+    loading: edited === undefined && loaded === null,
+    failed: edited === undefined && loaded?.status === "error",
     message: loaded?.message,
   };
 }

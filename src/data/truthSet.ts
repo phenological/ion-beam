@@ -3,7 +3,7 @@ import { toDatasetUrl, type Dataset } from "./datasets";
 
 const idColumns = ["feature_id", "id", "label", "name"];
 const mzColumns = ["mz", "m/z"];
-const rtColumns = ["rt", "retention_time"];
+const rtColumns = ["rt", "retention_time", "retentiontime"];
 const formulaColumns = ["formula", "mf"];
 
 export async function getTruthSet(dataset: Dataset): Promise<Compound[]> {
@@ -19,7 +19,7 @@ export function readTruthSet(text: string): Compound[] {
   const rows = text.split(/\r?\n/).filter((row) => row.trim().length > 0);
   if (rows.length === 0) throw new Error("the list is empty");
 
-  const header = rows[0].split("\t").map((cell) => cell.trim().toLowerCase());
+  const header = rows[0].split("\t").map(readColumnName);
   const idAt = findColumn(header, idColumns);
   const mzAt = findColumn(header, mzColumns);
   const rtAt = findColumn(header, rtColumns);
@@ -40,6 +40,10 @@ export function readTruthSet(text: string): Compound[] {
     found.push(formula.length > 0 ? { label, mz, rt, MF: formula } : { label, mz, rt });
   }
   return found;
+}
+
+function readColumnName(cell: string): string {
+  return cell.replace(/^\uFEFF/, "").replace(/\s+/g, "").toLowerCase();
 }
 
 function findColumn(header: string[], names: string[]): number {

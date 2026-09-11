@@ -1,6 +1,7 @@
 import IonWorker from "./ionWorker?worker";
 import type { Point } from "./eic";
 import { applySnapshot } from "./traffic";
+import { getUploadBytes } from "./uploads";
 import type { AskWorker, WorkerSays } from "./workerMessages";
 
 interface Waiting {
@@ -72,7 +73,13 @@ export async function openFile(url: string, name: string): Promise<void> {
     nextWorker += 1;
     workerForUrl.set(url, at);
   }
-  await ask(at, { type: "open", id: nextId++, url, name });
+  await ask(at, {
+    type: "open",
+    id: nextId++,
+    url,
+    name,
+    bytes: getUploadBytes(url) ?? undefined,
+  });
 }
 
 export async function readEic(

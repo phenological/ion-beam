@@ -1,5 +1,6 @@
 import { compounds, type Compound } from "./compounds";
 import { timeRange } from "./targets";
+import { isUploadFolder } from "../ms/uploads";
 
 export interface Dataset {
   id: string;
@@ -42,6 +43,9 @@ export const datasets: Dataset[] = [
 export function findDataset(path: string): Dataset {
   const clean = path.trim();
   if (clean.length === 0) return defaultDataset;
+  if (isUploadFolder(clean)) {
+    return { id: clean, label: "Uploaded files", folders: [], rtRange: timeRange, list: [] };
+  }
   for (const dataset of datasets) {
     if (dataset.folders.some((folder) => clean.startsWith(folder))) return dataset;
   }

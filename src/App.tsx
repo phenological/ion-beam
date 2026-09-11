@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { getPeaks } from "./ms/peaks";
 import { getBaseline } from "./ms/baseline";
 import { PathInput } from "./components/PathInput";
+import { UploadButton } from "./components/UploadButton";
 import { SampleList } from "./components/SampleList";
 import { FolderList } from "./components/FolderList";
 import { CompoundList } from "./components/CompoundList";
@@ -91,6 +92,7 @@ function App() {
           {state.samplesOpen && (
             <span className="sidebar-count">{view.samples.length}</span>
           )}
+          {state.samplesOpen && <UploadButton />}
           <button
             type="button"
             className="sidebar-toggle"
@@ -102,6 +104,14 @@ function App() {
         </div>
         {state.samplesOpen && (
           <div className="sidebar-body">
+            {state.uploadStatus?.status === "reading" && (
+              <p className="banner">Reading the zip…</p>
+            )}
+            {state.uploadStatus?.status === "error" && (
+              <p className="banner banner-error">
+                Could not read the zip: {state.uploadStatus.message}
+              </p>
+            )}
             {view.samplesFailed && (
               <p className="banner banner-error">Could not list samples: {view.samplesMessage}</p>
             )}
