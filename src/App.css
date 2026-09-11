@@ -922,9 +922,17 @@ body.resizing .resize-handle::after {
 .peak-table {
   display: flex;
   flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
+}
+
+.peak-scroll {
+  overflow-y: auto;
+  overflow-x: auto;
+  max-height: 45vh;
 }
 
 .peak-head {
@@ -957,10 +965,18 @@ body.resizing .resize-handle::after {
   font-weight: 700;
 }
 
-.peak-empty {
-  padding: 12px;
-  font-size: 12px;
+.peak-group-main {
   color: var(--text-soft);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.peak-sample {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
 }
 
 .peaks {
@@ -976,19 +992,22 @@ body.resizing .resize-handle::after {
 }
 
 .peaks th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   padding: 6px 12px;
   text-align: right;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
   white-space: nowrap;
+  background: var(--primary);
+  color: #fff;
 }
 
 .peaks th:first-child,
 .peaks td:first-child {
   text-align: left;
-  width: 36px;
-  color: var(--text-soft);
 }
 
 .peaks td {
@@ -1614,10 +1633,6 @@ body.dragging {
 
   .peaks {
     min-width: 520px;
-  }
-
-  .peak-scroll {
-    overflow-x: auto;
   }
 
   .inspect-panel {

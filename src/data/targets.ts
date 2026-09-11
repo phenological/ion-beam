@@ -6,4 +6,6 @@ export const defaultPaths = [
 
 export const defaultMz = 195.0876;
 
+export const defaultRtWindow = 0.2;
+
 export const timeRange = { from: 0, to: 10 };

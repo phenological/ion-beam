@@ -1,10 +1,10 @@
 import { produce } from "immer";
 import type { PeakOptions } from "quantion";
 import type { Point } from "../ms/eic";
-import type { Peak } from "../ms/peaks";
+import { emptyPeak, type Peak } from "../ms/peaks";
 import type { Compound } from "../data/compounds";
 import { findDataset } from "../data/datasets";
-import { defaultMz, defaultPaths } from "../data/targets";
+import { defaultMz, defaultPaths, defaultRtWindow } from "../data/targets";
 import { readPaths } from "../utilities/savedPaths";
 import { isWideScreen } from "../utilities/screen";
 import type { Entry } from "../ms/listSamples";
@@ -29,9 +29,12 @@ export interface Outcome {
   message?: string;
 }
 
-export interface Peaks {
-  key: string;
-  list: Peak[];
+export interface SamplePeaks {
+  sample: string;
+  color: string;
+  main: boolean;
+  peak: Peak;
+  ready: boolean;
 }
 
 export interface CompoundSet {
@@ -56,6 +59,7 @@ export interface State {
   pickedMz: number | null;
   pickedLabel: string | null;
   targetRt: number | null;
+  targetRtWindow: number;
   wideScreen: boolean;
   samplesOpen: boolean;
   metabolitesOpen: boolean;
@@ -79,7 +83,7 @@ export interface State {
   samples: SamplesState | null;
   files: Record<string, FileState>;
   outcomes: Record<string, Outcome>;
-  peaks: Peaks | null;
+  peaksByKey: Record<string, Peak>;
   compoundSet: CompoundSet | null;
   compoundEdits: Record<string, Compound[]>;
   uploadStatus: { status: "reading" } | { status: "error"; message: string } | null;
@@ -99,6 +103,7 @@ export const initialState: State = {
   pickedMz: null,
   pickedLabel: null,
   targetRt: null,
+  targetRtWindow: defaultRtWindow,
   wideScreen: startsWide,
   samplesOpen: startsWide,
   metabolitesOpen: startsWide,
@@ -122,7 +127,7 @@ export const initialState: State = {
   samples: null,
   files: {},
   outcomes: {},
-  peaks: null,
+  peaksByKey: {},
   compoundSet: startDataset.file
     ? null
     : { id: startDataset.id, status: "ok", list: startDataset.list },
@@ -169,7 +174,7 @@ export type Action =
   | { type: "fileClosed"; url: string }
   | { type: "eicReady"; url: string; key: string; points: Point[] }
   | { type: "eicFailed"; url: string; key: string; message: string }
-  | { type: "peaksFound"; key: string; list: Peak[] }
+  | { type: "peakFound"; key: string; peak: Peak }
   | { type: "compoundsLoaded"; id: string; list: Compound[] }
   | { type: "compoundsFailed"; id: string; message: string }
   | { type: "addCompound"; compound: Compound }
@@ -249,6 +254,10 @@ function getWorkingList(draft: State): Compound[] {
   return draft.compoundEdits[id];
 }
 
+function forgetPeaks(draft: State): void {
+  draft.peaksByKey = {};
+}
+
 export function reducer(state: State, action: Action): State {
   return produce(state, (draft: State) => {
     switch (action.type) {
@@ -264,6 +273,7 @@ export function reducer(state: State, action: Action): State {
         draft.pickedLabel = null;
         draft.targetRt = null;
         draft.uploadStatus = null;
+        forgetPeaks(draft);
         break;
       case "addPath": {
         const path = action.path.trim();
@@ -282,6 +292,7 @@ export function reducer(state: State, action: Action): State {
         draft.pickedLabel = null;
         draft.targetRt = null;
         draft.uploadStatus = null;
+        forgetPeaks(draft);
         break;
       }
       case "openFolder":
@@ -293,6 +304,7 @@ export function reducer(state: State, action: Action): State {
         draft.pickedLabel = null;
         draft.targetRt = null;
         draft.uploadStatus = null;
+        forgetPeaks(draft);
         break;
       case "goUp": {
         const previous = draft.folderStack.pop();
@@ -304,6 +316,7 @@ export function reducer(state: State, action: Action): State {
         draft.pickedLabel = null;
         draft.targetRt = null;
         draft.uploadStatus = null;
+        forgetPeaks(draft);
         break;
       }
       case "pickSample":
@@ -334,13 +347,17 @@ export function reducer(state: State, action: Action): State {
         draft.pickedMz = readMz(action.value);
         draft.pickedLabel = null;
         draft.targetRt = null;
+        draft.targetRtWindow = defaultRtWindow;
+        forgetPeaks(draft);
         break;
       case "pickCompound":
         draft.mzText = String(action.compound.mz);
         draft.pickedMz = action.compound.mz;
         draft.pickedLabel = action.compound.label;
         draft.targetRt = action.compound.rt;
+        draft.targetRtWindow = action.compound.sd ?? defaultRtWindow;
         draft.metabolitesOpen = draft.wideScreen;
+        forgetPeaks(draft);
         break;
       case "toggleSamples":
         draft.samplesOpen = !draft.samplesOpen;
@@ -352,25 +369,36 @@ export function reducer(state: State, action: Action): State {
         draft.inspectOpen = !draft.inspectOpen;
         break;
       case "setMinIntensity":
+        if (action.value === draft.minIntensity) break;
         draft.minIntensity = action.value;
+        forgetPeaks(draft);
         break;
       case "setMinIntegral":
+        if (action.value === draft.minIntegral) break;
         draft.minIntegral = action.value;
+        forgetPeaks(draft);
         break;
       case "setMinWidth":
+        if (action.value === draft.minWidth) break;
         draft.minWidth = action.value;
+        forgetPeaks(draft);
         break;
       case "setMinSnr":
+        if (action.value === draft.minSnr) break;
         draft.minSnr = action.value;
+        forgetPeaks(draft);
         break;
       case "toggleAutoNoise":
         draft.autoNoise = !draft.autoNoise;
+        forgetPeaks(draft);
         break;
       case "toggleAutoBaseline":
         draft.autoBaseline = !draft.autoBaseline;
+        forgetPeaks(draft);
         break;
       case "toggleAllowOverlap":
         draft.allowOverlap = !draft.allowOverlap;
+        forgetPeaks(draft);
         break;
       case "toggleAnnotate":
         draft.annotate = !draft.annotate;
@@ -382,20 +410,30 @@ export function reducer(state: State, action: Action): State {
         draft.autoPeakPicking = !draft.autoPeakPicking;
         break;
       case "setRtFrom":
+        if (action.value === draft.rtFrom) break;
         draft.rtFrom = action.value;
+        forgetPeaks(draft);
         break;
       case "setRtTo":
+        if (action.value === draft.rtTo) break;
         draft.rtTo = action.value;
+        forgetPeaks(draft);
         break;
       case "setRtRange":
+        if (action.from === draft.rtFrom && action.to === draft.rtTo) break;
         draft.rtFrom = action.from;
         draft.rtTo = action.to;
+        forgetPeaks(draft);
         break;
       case "setPpm":
+        if (action.value === draft.ppm) break;
         draft.ppm = action.value;
+        forgetPeaks(draft);
         break;
       case "setMzTol":
+        if (action.value === draft.mzTol) break;
         draft.mzTol = action.value;
+        forgetPeaks(draft);
         break;
       case "setSamplesWidth":
         draft.samplesWidth = clampPanelWidth(action.value);
@@ -445,8 +483,8 @@ export function reducer(state: State, action: Action): State {
           message: action.message,
         };
         break;
-      case "peaksFound":
-        draft.peaks = { key: action.key, list: action.list };
+      case "peakFound":
+        draft.peaksByKey[action.key] = action.peak;
         break;
       case "compoundsLoaded":
         draft.compoundSet = { id: action.id, status: "ok", list: action.list };
@@ -544,6 +582,16 @@ export function eicKey(
   return `${url}|${mz}|${settings.rtFrom}|${settings.rtTo}|${settings.ppm}|${settings.mzTol}`;
 }
 
+export function peakKey(
+  url: string,
+  mz: number,
+  settings: EicSettings,
+  rt: number | null,
+  window: number,
+): string {
+  return `${eicKey(url, mz, settings)}|${rt}|${window}`;
+}
+
 export function readMz(value: string): number | null {
   const mz = Number(value);
   return Number.isFinite(mz) && mz > 0 ? mz : null;
@@ -565,7 +613,6 @@ export function datasetPath(state: Pick<State, "path" | "folderStack">): string 
 const emptyNames: string[] = [];
 const emptyEntries: Entry[] = [];
 const emptyPoints: Point[] = [];
-const emptyPeaks: Peak[] = [];
 const emptyUrls: string[] = [];
 const emptyTraces: Trace[] = [];
 const emptyCompounds: Compound[] = [];
@@ -693,6 +740,28 @@ export function selectTraces(input: TraceInput): Trace[] {
   });
 }
 
+export function selectSamplePeaks(
+  traces: Trace[],
+  peaksByKey: Record<string, Peak>,
+  mz: number | null,
+  settings: EicSettings,
+  targetRt: number | null,
+  targetRtWindow: number,
+): SamplePeaks[] {
+  if (mz === null) return [];
+  return traces.map((trace) => {
+    const key = peakKey(trace.url, mz, settings, targetRt, targetRtWindow);
+    const found = peaksByKey[key];
+    return {
+      sample: trace.sample,
+      color: trace.color,
+      main: trace.main,
+      peak: found ?? emptyPeak,
+      ready: found !== undefined,
+    };
+  });
+}
+
 export interface View {
   samplesReady: boolean;
   samplesFailed: boolean;
@@ -706,8 +775,6 @@ export interface View {
   mainPoints: Point[];
   mainReady: boolean;
   mz: number | null;
-  peaks: Peak[];
-  peaksReady: boolean;
 }
 
 export function selectView(state: State): View {
@@ -736,11 +803,6 @@ export function selectView(state: State): View {
   const mainReady = outcome?.status === "ok";
   const mainPoints = outcome?.points ?? emptyPoints;
 
-  const peaksReady = Boolean(
-    mainKey !== null && state.peaks?.key === mainKey,
-  );
-  const peaks = peaksReady ? (state.peaks?.list ?? emptyPeaks) : emptyPeaks;
-
   return {
     samplesReady,
     samplesFailed,
@@ -754,8 +816,6 @@ export function selectView(state: State): View {
     mainPoints,
     mainReady,
     mz,
-    peaks,
-    peaksReady,
   };
 }
 

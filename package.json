@@ -12,7 +12,7 @@
   "dependencies": {
     "fflate": "^0.8.3",
     "immer": "^11.1.8",
-    "quantion": "file:external/quantion-0.1.0.tgz",
+    "quantion": "file:external/quantion-0.1.1.tgz",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-plot": "^3.1.2"

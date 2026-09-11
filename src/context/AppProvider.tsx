@@ -2,16 +2,17 @@ import { useEffect, useReducer, type ReactNode } from "react";
 import { findDataset } from "../data/datasets";
 import { getTruthSet } from "../data/truthSet";
 import { getSamples } from "../ms/listSamples";
-import { getPeaks } from "../ms/peaks";
+import { getTargetPeak } from "../ms/peaks";
 import { writePaths } from "../utilities/savedPaths";
 import { watchWideScreen } from "../utilities/screen";
 import { DispatchContext, StateContext } from "./context";
 import { SampleLoader } from "./SampleLoader";
-import { useOpenUrls, useSampleNames } from "./useTraces";
+import { useOpenUrls, useSampleNames, useTraces } from "./useTraces";
 import {
   activePath,
   datasetPath,
   initialState,
+  peakKey,
   peakOptions,
   readError,
   reducer,
@@ -50,11 +51,15 @@ export function AppProvider({ children }: AppProviderProps) {
     autoNoise,
     autoBaseline,
     allowOverlap,
+    targetRt,
+    targetRtWindow,
   } = state;
   const path = activePath(state);
-  const { mainKey, mainPoints, mainReady, mz } = selectView(state);
+  const { mz } = selectView(state);
   const openUrls = useOpenUrls(state);
   const sampleNames = useSampleNames(state);
+  const traces = useTraces(state);
+  const { peaksByKey } = state;
 
   useEffect(() => {
     if (samples && samples.path === path) return undefined;
@@ -82,7 +87,7 @@ export function AppProvider({ children }: AppProviderProps) {
       from: dataset.rtRange.from,
       to: dataset.rtRange.to,
     });
-  }, [dataset]);
+  }, [dataset.id, dataset.rtRange.from, dataset.rtRange.to]);
 
   useEffect(() => {
     if (compoundSet?.id === dataset.id) return undefined;
@@ -113,7 +118,7 @@ export function AppProvider({ children }: AppProviderProps) {
   }, [dataset, compoundSet]);
 
   useEffect(() => {
-    if (!autoPeakPicking || !mainReady || mainKey === null) return;
+    if (!autoPeakPicking || mz === null) return;
     const options = peakOptions({
       minIntensity,
       minIntegral,
@@ -123,13 +128,24 @@ export function AppProvider({ children }: AppProviderProps) {
       autoBaseline,
       allowOverlap,
     });
-    const list = getPeaks(mainPoints, options);
-    dispatch({ type: "peaksFound", key: mainKey, list });
+    for (const trace of traces) {
+      if (trace.status !== "ready") continue;
+      const key = peakKey(trace.url, mz, { rtFrom, rtTo, ppm, mzTol }, targetRt, targetRtWindow);
+      if (peaksByKey[key] !== undefined) continue;
+      const peak = getTargetPeak(trace.points, targetRt, targetRtWindow, options);
+      dispatch({ type: "peakFound", key, peak });
+    }
   }, [
     autoPeakPicking,
-    mainReady,
-    mainPoints,
-    mainKey,
+    traces,
+    mz,
+    rtFrom,
+    rtTo,
+    ppm,
+    mzTol,
+    peaksByKey,
+    targetRt,
+    targetRtWindow,
     minIntensity,
     minIntegral,
     minWidth,

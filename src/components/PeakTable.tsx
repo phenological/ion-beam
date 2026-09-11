@@ -1,53 +1,75 @@
 import { memo } from "react";
-import type { Peak } from "../ms/peaks";
+import type { SamplePeaks } from "../context/reducer";
+import { TraceSwatch } from "./TraceSwatch";
 
 interface PeakTableProps {
-  peaks: Peak[];
+  rows: SamplePeaks[];
 }
 
 function formatAmount(value: number): string {
-  return value.toExponential(2);
+  return value === 0 ? "0" : value.toExponential(2);
 }
 
-export const PeakTable = memo(function PeakTable({ peaks }: PeakTableProps) {
+function PeakRow({ row }: { row: SamplePeaks }) {
+  return (
+    <tr>
+      <td className="peak-sample">
+        <TraceSwatch color={row.color} />
+        <span>{row.sample}</span>
+        {row.main && <span className="peak-group-main">main</span>}
+      </td>
+      {!row.ready ? (
+        <>
+          <td>finding…</td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </>
+      ) : (
+        <>
+          <td>{row.peak.rt.toFixed(3)}</td>
+          <td>{formatAmount(row.peak.intensity)}</td>
+          <td>{formatAmount(row.peak.integral)}</td>
+          <td>{row.peak.from.toFixed(3)}</td>
+          <td>{row.peak.to.toFixed(3)}</td>
+          <td>{row.peak.nPoints}</td>
+        </>
+      )}
+    </tr>
+  );
+}
+
+export const PeakTable = memo(function PeakTable({ rows }: PeakTableProps) {
+  const foundCount = rows.filter((row) => row.peak.intensity > 0).length;
+
   return (
     <div className="peak-table">
       <div className="peak-head">
         <span className="peak-label">Peaks</span>
-        <span className="peak-count">{peaks.length}</span>
+        <span className="peak-count">{foundCount}</span>
       </div>
-      {peaks.length === 0 ? (
-        <p className="peak-empty">No peaks found</p>
-      ) : (
-        <div className="peak-scroll">
-          <table className="peaks">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>RT</th>
-                <th>Intensity</th>
-                <th>Integral</th>
-                <th>From</th>
-                <th>To</th>
-                <th>NP</th>
-              </tr>
-            </thead>
-            <tbody>
-              {peaks.map((peak, index) => (
-                <tr key={index}>
-                  <td>{index + 1}</td>
-                  <td>{peak.rt.toFixed(3)}</td>
-                  <td>{formatAmount(peak.intensity)}</td>
-                  <td>{formatAmount(peak.integral)}</td>
-                  <td>{peak.from.toFixed(3)}</td>
-                  <td>{peak.to.toFixed(3)}</td>
-                  <td>{peak.nPoints}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div className="peak-scroll">
+        <table className="peaks">
+          <thead>
+            <tr>
+              <th>Sample</th>
+              <th>RT</th>
+              <th>Intensity</th>
+              <th>Integral</th>
+              <th>From</th>
+              <th>To</th>
+              <th>NP</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <PeakRow key={row.sample} row={row} />
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 });

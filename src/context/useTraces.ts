@@ -1,8 +1,10 @@
 import { useMemo } from "react";
 import {
   selectOpenUrls,
+  selectSamplePeaks,
   selectSampleNames,
   selectTraces,
+  type SamplePeaks,
   type State,
   type Trace,
 } from "./reducer";
@@ -62,5 +64,22 @@ export function useTraces(state: State): Trace[] {
       files,
       outcomes,
     ],
+  );
+}
+
+export function useSamplePeaks(state: State, traces: Trace[]): SamplePeaks[] {
+  const { peaksByKey, pickedMz, rtFrom, rtTo, ppm, mzTol, targetRt, targetRtWindow } =
+    state;
+  return useMemo(
+    () =>
+      selectSamplePeaks(
+        traces,
+        peaksByKey,
+        pickedMz,
+        { rtFrom, rtTo, ppm, mzTol },
+        targetRt,
+        targetRtWindow,
+      ),
+    [traces, peaksByKey, pickedMz, rtFrom, rtTo, ppm, mzTol, targetRt, targetRtWindow],
   );
 }

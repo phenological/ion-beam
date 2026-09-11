@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { getPeaks } from "./ms/peaks";
+import { getTargetPeak } from "./ms/peaks";
 import { getBaseline } from "./ms/baseline";
 import { PathInput } from "./components/PathInput";
 import { UploadButton } from "./components/UploadButton";
@@ -15,11 +15,12 @@ import { TraceLegend } from "./components/TraceLegend";
 import { useAppDispatch, useAppState } from "./context/context";
 import {
   activePath,
+  peakKey,
   peakOptions,
   selectCompounds,
   selectView,
 } from "./context/reducer";
-import { useTraces } from "./context/useTraces";
+import { useSamplePeaks, useTraces } from "./context/useTraces";
 import "./App.css";
 
 function headline(
@@ -40,6 +41,7 @@ function App() {
   const view = selectView(state);
   const metabolites = selectCompounds(state);
   const traces = useTraces(state);
+  const samplePeaks = useSamplePeaks(state, traces);
 
   const sampleColors = useMemo(() => {
     const colors: Record<string, string> = {};
@@ -55,11 +57,17 @@ function App() {
 
   const annotateRt = state.annotate && state.targetRt !== null ? state.targetRt : null;
   const mainTrace = traces.find((trace) => trace.main) ?? null;
+  const mainPeak = samplePeaks.find((group) => group.main)?.peak ?? null;
 
   function runPeakPicking() {
-    if (!view.mainReady || view.mainKey === null) return;
-    const list = getPeaks(view.mainPoints, peakOptions(state));
-    dispatch({ type: "peaksFound", key: view.mainKey, list });
+    if (view.mz === null) return;
+    const options = peakOptions(state);
+    for (const trace of traces) {
+      if (trace.status !== "ready") continue;
+      const key = peakKey(trace.url, view.mz, state, state.targetRt, state.targetRtWindow);
+      const peak = getTargetPeak(trace.points, state.targetRt, state.targetRtWindow, options);
+      dispatch({ type: "peakFound", key, peak });
+    }
   }
 
   const anySheetOpen = state.samplesOpen || state.metabolitesOpen;
@@ -199,7 +207,9 @@ function App() {
               {view.mainReady && (
                 <EicPlot
                   traces={traces}
-                  peaks={view.peaks}
+                  peaks={
+                    mainPeak && mainPeak.intensity > 0 ? [mainPeak] : []
+                  }
                   baseline={baseline}
                   annotateRt={annotateRt}
                 />
@@ -207,7 +217,9 @@ function App() {
             </section>
           )}
 
-          {view.peaksReady && <PeakTable peaks={view.peaks} />}
+          {samplePeaks.some((group) => group.ready) && (
+            <PeakTable rows={samplePeaks} />
+          )}
         </div>
 
       </main>

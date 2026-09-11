@@ -40,11 +40,21 @@ export const datasets: Dataset[] = [
   },
 ];
 
+const uploadDatasets = new Map<string, Dataset>();
+
+function getUploadDataset(path: string): Dataset {
+  const existing = uploadDatasets.get(path);
+  if (existing) return existing;
+  const dataset: Dataset = { id: path, label: "Uploaded files", folders: [], rtRange: timeRange, list: [] };
+  uploadDatasets.set(path, dataset);
+  return dataset;
+}
+
 export function findDataset(path: string): Dataset {
   const clean = path.trim();
   if (clean.length === 0) return defaultDataset;
   if (isUploadFolder(clean)) {
-    return { id: clean, label: "Uploaded files", folders: [], rtRange: timeRange, list: [] };
+    return getUploadDataset(clean);
   }
   for (const dataset of datasets) {
     if (dataset.folders.some((folder) => clean.startsWith(folder))) return dataset;
