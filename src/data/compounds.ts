@@ -55,6 +55,7 @@ export const compounds: Compound[] = [
   { label: 'Taurine', rt: 2.29, mz: 296.07, sd: 0.15311890933385838 },
   { label: 'Threonine', rt: 2.28, mz: 290.1135, sd: 0.18170194178691976 },
   { label: 'Threonine-13C4,15N [IS]', rt: 2.28, mz: 295.124, sd: 0.22713008149454567 },
+  { label: '5-HTP', rt: 4.24, mz: 391.1406, sd: 0.2 },
   { label: 'Tryptophan', rt: 4.44, mz: 375.1452, sd: 0.2 },
   { label: 'Tryptophan-13C11,15N2 [IS]', rt: 4.44, mz: 388.1761, sd: 0.2 },
   { label: 'Tyrosine', rt: 3.18, mz: 352.1292, sd: 0.07479191439204584 },
