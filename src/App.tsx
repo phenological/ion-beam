@@ -21,6 +21,8 @@ import {
   selectView,
 } from "./context/reducer";
 import { useSamplePeaks, useTraces } from "./context/useTraces";
+import type { ZipProgress } from "./ms/zipClient";
+import { readBasename } from "./ms/uploads";
 import "./App.css";
 
 function headline(
@@ -33,6 +35,12 @@ function headline(
   const target = label ?? (mz === null ? "no metabolite" : `m/z ${mz}`);
   if (count < 2) return `${mainSample} · ${target}`;
   return `${count} samples · ${target}`;
+}
+
+function describeUpload(progress: ZipProgress | null): string {
+  if (!progress || progress.current === null) return "Reading the zip…";
+  const step = Math.min(progress.done + 1, progress.total);
+  return `Reading ${readBasename(progress.current)} (${step} of ${progress.total})…`;
 }
 
 function App() {
@@ -113,7 +121,7 @@ function App() {
         {state.samplesOpen && (
           <div className="sidebar-body">
             {state.uploadStatus?.status === "reading" && (
-              <p className="banner">Reading the zip…</p>
+              <p className="banner">{describeUpload(state.uploadStatus.progress)}</p>
             )}
             {state.uploadStatus?.status === "error" && (
               <p className="banner banner-error">

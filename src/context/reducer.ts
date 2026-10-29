@@ -8,6 +8,7 @@ import { defaultMz, defaultPaths, defaultRtWindow } from "../data/targets";
 import { readPaths } from "../utilities/savedPaths";
 import { isWideScreen } from "../utilities/screen";
 import type { Entry } from "../ms/listSamples";
+import type { ZipProgress } from "../ms/zipClient";
 
 export interface SamplesState {
   path: string;
@@ -86,7 +87,10 @@ export interface State {
   peaksByKey: Record<string, Peak>;
   compoundSet: CompoundSet | null;
   compoundEdits: Record<string, Compound[]>;
-  uploadStatus: { status: "reading" } | { status: "error"; message: string } | null;
+  uploadStatus:
+    | { status: "reading"; progress: ZipProgress | null }
+    | { status: "error"; message: string }
+    | null;
 }
 
 const startPaths = readPaths(defaultPaths);
@@ -182,6 +186,7 @@ export type Action =
   | { type: "removeCompound"; label: string }
   | { type: "replaceCompounds"; list: Compound[] }
   | { type: "uploadStarted" }
+  | { type: "uploadProgress"; progress: ZipProgress }
   | { type: "uploadFailed"; message: string };
 
 const minPanelWidth = 220;
@@ -540,7 +545,10 @@ export function reducer(state: State, action: Action): State {
         break;
       }
       case "uploadStarted":
-        draft.uploadStatus = { status: "reading" };
+        draft.uploadStatus = { status: "reading", progress: null };
+        break;
+      case "uploadProgress":
+        draft.uploadStatus = { status: "reading", progress: action.progress };
         break;
       case "uploadFailed":
         draft.uploadStatus = { status: "error", message: action.message };

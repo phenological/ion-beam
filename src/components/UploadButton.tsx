@@ -1,8 +1,12 @@
 import { useRef, type ChangeEvent } from "react";
 import { useAppDispatch } from "../context/context";
-import { unzipSamples } from "../ms/unzip";
+import { readZip, type SkippedSample } from "../ms/zipClient";
 import { storeUpload } from "../ms/uploads";
 import { readError } from "../context/reducer";
+
+function describeSkipped(skipped: SkippedSample[]): string {
+  return skipped.map((sample) => `${sample.path}: ${sample.message}`).join("; ");
+}
 
 export function UploadButton() {
   const dispatch = useAppDispatch();
@@ -15,10 +19,17 @@ export function UploadButton() {
 
     dispatch({ type: "uploadStarted" });
     try {
-      const buffer = await file.arrayBuffer();
-      const files = await unzipSamples(new Uint8Array(buffer));
-      const path = storeUpload(file.name, files);
+      const result = await readZip(file, (progress) => {
+        dispatch({ type: "uploadProgress", progress });
+      });
+      if (result.files.length === 0 && result.skipped.length > 0) {
+        throw new Error(describeSkipped(result.skipped));
+      }
+      const path = storeUpload(file.name, result.files);
       dispatch({ type: "setPath", path });
+      if (result.skipped.length > 0) {
+        dispatch({ type: "uploadFailed", message: describeSkipped(result.skipped) });
+      }
     } catch (error: unknown) {
       dispatch({ type: "uploadFailed", message: readError(error) });
     }
@@ -29,7 +40,7 @@ export function UploadButton() {
       <button
         type="button"
         className="sidebar-upload"
-        title="Upload a zip of samples"
+        title="Upload a zip of .ion, .mzML or Bruker .d samples"
         onClick={() => inputRef.current?.click()}
       >
         Upload

@@ -39,7 +39,7 @@ export function readBasename(path: string): string {
 }
 
 export function storeUpload(zipName: string, files: UploadedFile[]): string {
-  if (files.length === 0) throw new Error("no .ion or .mzML files in the zip");
+  if (files.length === 0) throw new Error("no .ion, .mzML or .d samples in the zip");
 
   const folder = toUploadPath(zipName);
   const stored = new Map<string, Uint8Array>();
