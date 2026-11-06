@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useMemo } from "react";
 import {
   Annotation,
   Annotations,
@@ -8,42 +8,20 @@ import {
   PlotController,
   useAxisWheelZoom,
   useAxisZoom,
+  usePlotEvents,
 } from "react-plot";
 import type { Point } from "../ms/eic";
 import type { Peak } from "../ms/peaks";
 import type { Trace } from "../context/reducer";
+import { HeightHandle } from "./HeightHandle";
+import { usePlotSize } from "../utilities/plotSize";
 
-const tallestPlot = 460;
-const shortestPlot = 150;
-const minWidth = 280;
-const shareOfWidth = 0.55;
-const shareOfScreen = 0.52;
-
-function readPlotHeight(width: number, screenHeight: number): number {
-  const fromWidth = Math.round(width * shareOfWidth);
-  const fromScreen = Math.round(screenHeight * shareOfScreen);
-  const wanted = Math.min(fromWidth, fromScreen);
-  if (wanted > tallestPlot) return tallestPlot;
-  if (wanted < shortestPlot) return shortestPlot;
-  return wanted;
-}
-
-function useScreenHeight(): number {
-  const [height, setHeight] = useState(() => globalThis.innerHeight || 800);
-
-  useEffect(() => {
-    const update = () => setHeight(globalThis.innerHeight);
-    globalThis.addEventListener("resize", update);
-    return () => globalThis.removeEventListener("resize", update);
-  }, []);
-
-  return height;
-}
 const traceWidth = 1.5;
 const baselineStyle = { stroke: "#ef4444", strokeWidth: 2, strokeDasharray: "6 4" };
 const peakFill = "rgba(51, 65, 85, 0.16)";
 const peakStroke = "#334155";
 const annotateStroke = "#2563eb";
+const markStroke = "#94a3b8";
 
 interface LineStyle {
   stroke: string;
@@ -53,7 +31,7 @@ interface LineStyle {
 function readLineStyles(traces: Trace[]): Record<string, LineStyle> {
   const styles: Record<string, LineStyle> = {};
   for (const trace of traces) {
-    styles[trace.url] = { stroke: trace.color, strokeWidth: traceWidth };
+    styles[trace.id] = { stroke: trace.color, strokeWidth: traceWidth };
   }
   return styles;
 }
@@ -63,26 +41,45 @@ interface ChartProps {
   peaks: Peak[];
   baseline: Point[] | null;
   annotateRt: number | null;
+  markRt: number | null;
   width: number;
   height: number;
+  onPickRt?: (rt: number) => void;
 }
 
-function Chart({ traces, peaks, baseline, annotateRt, width, height }: ChartProps) {
+function Chart({
+  traces,
+  peaks,
+  baseline,
+  annotateRt,
+  markRt,
+  width,
+  height,
+  onPickRt,
+}: ChartProps) {
   useAxisWheelZoom();
   const zoom = useAxisZoom();
+  usePlotEvents({
+    onClick(result) {
+      if (!onPickRt || !result.event.shiftKey) return;
+      const rt = result.clampedCoordinates.x ?? result.coordinates.x;
+      if (rt === undefined || Number.isNaN(rt)) return;
+      onPickRt(rt);
+    },
+  });
   const lineStyles = useMemo(() => readLineStyles(traces), [traces]);
 
   return (
     <Plot width={width} height={height}>
       {traces.map((trace) => (
         <LineSeries
-          key={trace.url}
-          id={trace.url}
-          label={trace.sample}
+          key={trace.id}
+          id={trace.id}
+          label={trace.name}
           data={trace.points}
           xAxis="x"
           yAxis="y"
-          lineStyle={lineStyles[trace.url]}
+          lineStyle={lineStyles[trace.id]}
         />
       ))}
       {baseline && (
@@ -97,12 +94,22 @@ function Chart({ traces, peaks, baseline, annotateRt, width, height }: ChartProp
       <Axis id="x" position="bottom" label="Time (min)" displayPrimaryGridLines={false} />
       <Axis id="y" position="left" label="Intensity" displayPrimaryGridLines />
       <Annotations>
+        {markRt !== null && (
+          <Annotation.Line
+            x1={markRt}
+            x2={markRt}
+            y1={0}
+            y2="0%"
+            color={markStroke}
+            strokeDasharray="2 3"
+          />
+        )}
         {annotateRt !== null && (
           <Annotation.Line
             x1={annotateRt}
             x2={annotateRt}
             y1={0}
-            y2="100%"
+            y2="0%"
             color={annotateStroke}
             strokeDasharray="5 4"
           />
@@ -137,6 +144,10 @@ interface EicPlotProps {
   peaks: Peak[];
   baseline: Point[] | null;
   annotateRt: number | null;
+  markRt?: number | null;
+  onPickRt?: (rt: number) => void;
+  chosenHeight?: number | null;
+  onResize?: (height: number | null) => void;
 }
 
 export const EicPlot = memo(function EicPlot({
@@ -144,23 +155,12 @@ export const EicPlot = memo(function EicPlot({
   peaks,
   baseline,
   annotateRt,
+  markRt = null,
+  onPickRt,
+  chosenHeight = null,
+  onResize,
 }: EicPlotProps) {
-  const wrap = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(800);
-  const screenHeight = useScreenHeight();
-
-  useEffect(() => {
-    const node = wrap.current;
-    if (!node) return undefined;
-    const observer = new ResizeObserver((entries) => {
-      const measured = entries[0]?.contentRect.width;
-      if (measured) setWidth(Math.max(minWidth, Math.floor(measured)));
-    });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-
-  const height = readPlotHeight(width, screenHeight);
+  const { wrap, width, height } = usePlotSize(1, chosenHeight);
   const hasPoints = traces.some((trace) => trace.points.length > 0);
   return (
     <div ref={wrap} className="plot-wrap">
@@ -171,8 +171,10 @@ export const EicPlot = memo(function EicPlot({
             peaks={peaks}
             baseline={baseline}
             annotateRt={annotateRt}
+            markRt={markRt}
             width={width}
             height={height}
+            onPickRt={onPickRt}
           />
         ) : (
           <div className="plot-empty" style={{ height }}>
@@ -180,6 +182,7 @@ export const EicPlot = memo(function EicPlot({
           </div>
         )}
       </PlotController>
+      {onResize && <HeightHandle height={height} onResize={onResize} onReset={() => onResize(null)} />}
     </div>
   );
 });

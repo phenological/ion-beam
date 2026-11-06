@@ -4,19 +4,19 @@ import { getTruthSet } from "../data/truthSet";
 import { getSamples } from "../ms/listSamples";
 import { getTargetPeak } from "../ms/peaks";
 import { writePaths } from "../utilities/savedPaths";
+import { writePanels } from "../utilities/savedPanels";
 import { watchWideScreen } from "../utilities/screen";
 import { DispatchContext, StateContext } from "./context";
 import { SampleLoader } from "./SampleLoader";
-import { useOpenUrls, useSampleNames, useTraces } from "./useTraces";
+import { useEicRequests, useSampleNames, useTraces } from "./useTraces";
 import {
   activePath,
   datasetPath,
   initialState,
-  peakKey,
   peakOptions,
   readError,
   reducer,
-  selectView,
+  tracePeakKey,
 } from "./reducer";
 
 interface AppProviderProps {
@@ -26,12 +26,16 @@ interface AppProviderProps {
 export function AppProvider({ children }: AppProviderProps) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  const { samples, savedPaths, compoundSet } = state;
+  const { samples, savedPaths, compoundSet, shownPanels } = state;
   const dataset = findDataset(datasetPath(state));
 
   useEffect(() => {
     writePaths(savedPaths);
   }, [savedPaths]);
+
+  useEffect(() => {
+    writePanels(shownPanels);
+  }, [shownPanels]);
 
   useEffect(
     () => watchWideScreen((wide) => dispatch({ type: "setWideScreen", wide })),
@@ -51,12 +55,9 @@ export function AppProvider({ children }: AppProviderProps) {
     autoNoise,
     autoBaseline,
     allowOverlap,
-    targetRt,
-    targetRtWindow,
   } = state;
   const path = activePath(state);
-  const { mz } = selectView(state);
-  const openUrls = useOpenUrls(state);
+  const eicRequests = useEicRequests(state);
   const sampleNames = useSampleNames(state);
   const traces = useTraces(state);
   const { peaksByKey } = state;
@@ -118,7 +119,7 @@ export function AppProvider({ children }: AppProviderProps) {
   }, [dataset, compoundSet]);
 
   useEffect(() => {
-    if (!autoPeakPicking || mz === null) return;
+    if (!autoPeakPicking) return;
     const options = peakOptions({
       minIntensity,
       minIntegral,
@@ -130,22 +131,19 @@ export function AppProvider({ children }: AppProviderProps) {
     });
     for (const trace of traces) {
       if (trace.status !== "ready") continue;
-      const key = peakKey(trace.url, mz, { rtFrom, rtTo, ppm, mzTol }, targetRt, targetRtWindow);
-      if (peaksByKey[key] !== undefined) continue;
-      const peak = getTargetPeak(trace.points, targetRt, targetRtWindow, options);
+      const key = tracePeakKey(trace, { rtFrom, rtTo, ppm, mzTol });
+      if (key === null || peaksByKey[key] !== undefined) continue;
+      const peak = getTargetPeak(trace.points, trace.rt, trace.rtWindow, options);
       dispatch({ type: "peakFound", key, peak });
     }
   }, [
     autoPeakPicking,
     traces,
-    mz,
     rtFrom,
     rtTo,
     ppm,
     mzTol,
     peaksByKey,
-    targetRt,
-    targetRtWindow,
     minIntensity,
     minIntegral,
     minWidth,
@@ -158,12 +156,12 @@ export function AppProvider({ children }: AppProviderProps) {
   return (
     <StateContext.Provider value={state}>
       <DispatchContext.Provider value={dispatch}>
-        {openUrls.map((url) => (
+        {eicRequests.map((request) => (
           <SampleLoader
-            key={url}
-            url={url}
-            name={sampleNames[url] ?? url}
-            mz={mz}
+            key={request.url}
+            url={request.url}
+            name={sampleNames[request.url] ?? request.url}
+            mzs={request.mzs}
             rtFrom={rtFrom}
             rtTo={rtTo}
             ppm={ppm}

@@ -1,11 +1,12 @@
 import { produce } from "immer";
-import type { PeakOptions } from "quantion";
+import type { FindPeaksOptions } from "quantion";
 import type { Point } from "../ms/eic";
 import { emptyPeak, type Peak } from "../ms/peaks";
 import type { Compound } from "../data/compounds";
 import { findDataset } from "../data/datasets";
 import { defaultMz, defaultPaths, defaultRtWindow } from "../data/targets";
 import { readPaths } from "../utilities/savedPaths";
+import { readPanels, type PanelName, type ShownPanels } from "../utilities/savedPanels";
 import { isWideScreen } from "../utilities/screen";
 import type { Entry } from "../ms/listSamples";
 import type { ZipProgress } from "../ms/zipClient";
@@ -50,12 +51,18 @@ export interface AddedSample {
   styleIndex: number;
 }
 
+export interface AddedCompound {
+  compound: Compound;
+  styleIndex: number;
+}
+
 export interface State {
   path: string;
   savedPaths: string[];
   folderStack: string[];
   pickedSample: string | null;
   addedSamples: AddedSample[];
+  addedCompounds: AddedCompound[];
   mzText: string;
   pickedMz: number | null;
   pickedLabel: string | null;
@@ -65,6 +72,7 @@ export interface State {
   samplesOpen: boolean;
   metabolitesOpen: boolean;
   inspectOpen: boolean;
+  shownPanels: ShownPanels;
   samplesWidth: number;
   metabolitesWidth: number;
   minIntensity: number;
@@ -83,7 +91,7 @@ export interface State {
   mzTol: number;
   samples: SamplesState | null;
   files: Record<string, FileState>;
-  outcomes: Record<string, Outcome>;
+  outcomes: Record<string, Record<string, Outcome>>;
   peaksByKey: Record<string, Peak>;
   compoundSet: CompoundSet | null;
   compoundEdits: Record<string, Compound[]>;
@@ -103,6 +111,7 @@ export const initialState: State = {
   folderStack: [],
   pickedSample: null,
   addedSamples: [],
+  addedCompounds: [],
   mzText: String(defaultMz),
   pickedMz: null,
   pickedLabel: null,
@@ -112,6 +121,7 @@ export const initialState: State = {
   samplesOpen: startsWide,
   metabolitesOpen: startsWide,
   inspectOpen: false,
+  shownPanels: readPanels(),
   samplesWidth: 300,
   metabolitesWidth: 320,
   minIntensity: 500,
@@ -121,7 +131,7 @@ export const initialState: State = {
   autoNoise: true,
   autoBaseline: true,
   allowOverlap: false,
-  annotate: true,
+  annotate: false,
   displayBaseline: false,
   autoPeakPicking: true,
   rtFrom: startDataset.rtRange.from,
@@ -150,10 +160,12 @@ export type Action =
   | { type: "toggleSample"; name: string }
   | { type: "changeMz"; value: string }
   | { type: "pickCompound"; compound: Compound }
+  | { type: "toggleCompound"; compound: Compound }
   | { type: "setWideScreen"; wide: boolean }
   | { type: "toggleSamples" }
   | { type: "toggleMetabolites" }
   | { type: "toggleInspect" }
+  | { type: "togglePanel"; name: PanelName }
   | { type: "setSamplesWidth"; value: number }
   | { type: "setMetabolitesWidth"; value: number }
   | { type: "setMinIntensity"; value: number }
@@ -239,8 +251,8 @@ function clampPanelWidth(value: number): number {
   return value;
 }
 
-function findFreeStyle(added: AddedSample[]): number {
-  const taken = new Set(added.map((sample) => sample.styleIndex));
+function findFreeStyle(added: { styleIndex: number }[]): number {
+  const taken = new Set(added.map((item) => item.styleIndex));
   let index = 1;
   while (taken.has(index)) index += 1;
   return index;
@@ -263,6 +275,34 @@ function forgetPeaks(draft: State): void {
   draft.peaksByKey = {};
 }
 
+function readWantedMzs(input: Pick<State, "pickedMz" | "addedCompounds">): number[] {
+  const mzs = new Set<number>();
+  if (input.pickedMz !== null) mzs.add(input.pickedMz);
+  for (const added of input.addedCompounds) mzs.add(added.compound.mz);
+  return [...mzs];
+}
+
+function storeOutcome(draft: State, url: string, outcome: Outcome): void {
+  const wantedKeys = new Set(readWantedMzs(draft).map((mz) => eicKey(url, mz, draft)));
+  if (!wantedKeys.has(outcome.key)) return;
+  const stored = draft.outcomes[url] ?? {};
+  for (const key of Object.keys(stored)) {
+    if (!wantedKeys.has(key)) delete stored[key];
+  }
+  stored[outcome.key] = outcome;
+  draft.outcomes[url] = stored;
+}
+
+function keepListedCompounds(added: AddedCompound[], list: Compound[]): AddedCompound[] {
+  const byLabel = new Map(list.map((compound) => [compound.label, compound]));
+  const kept: AddedCompound[] = [];
+  for (const item of added) {
+    const compound = byLabel.get(item.compound.label);
+    if (compound) kept.push({ compound, styleIndex: item.styleIndex });
+  }
+  return kept;
+}
+
 export function reducer(state: State, action: Action): State {
   return produce(state, (draft: State) => {
     switch (action.type) {
@@ -274,6 +314,7 @@ export function reducer(state: State, action: Action): State {
         draft.folderStack = [];
         draft.pickedSample = null;
         draft.addedSamples = [];
+        draft.addedCompounds = [];
         draft.pickedMz = null;
         draft.pickedLabel = null;
         draft.targetRt = null;
@@ -293,6 +334,7 @@ export function reducer(state: State, action: Action): State {
         draft.folderStack = [];
         draft.pickedSample = null;
         draft.addedSamples = [];
+        draft.addedCompounds = [];
         draft.pickedMz = null;
         draft.pickedLabel = null;
         draft.targetRt = null;
@@ -305,6 +347,7 @@ export function reducer(state: State, action: Action): State {
         draft.path = action.path;
         draft.pickedSample = null;
         draft.addedSamples = [];
+        draft.addedCompounds = [];
         draft.pickedMz = null;
         draft.pickedLabel = null;
         draft.targetRt = null;
@@ -317,6 +360,7 @@ export function reducer(state: State, action: Action): State {
         draft.path = previous;
         draft.pickedSample = null;
         draft.addedSamples = [];
+        draft.addedCompounds = [];
         draft.pickedMz = null;
         draft.pickedLabel = null;
         draft.targetRt = null;
@@ -343,8 +387,23 @@ export function reducer(state: State, action: Action): State {
           draft.addedSamples.splice(at, 1);
           break;
         }
+        draft.addedCompounds = [];
         const styleIndex = findFreeStyle(draft.addedSamples);
         draft.addedSamples.push({ name: action.name, styleIndex });
+        break;
+      }
+      case "toggleCompound": {
+        if (action.compound.label === draft.pickedLabel) break;
+        const at = draft.addedCompounds.findIndex(
+          (added) => added.compound.label === action.compound.label,
+        );
+        if (at !== -1) {
+          draft.addedCompounds.splice(at, 1);
+          break;
+        }
+        draft.addedSamples = [];
+        const styleIndex = findFreeStyle(draft.addedCompounds);
+        draft.addedCompounds.push({ compound: action.compound, styleIndex });
         break;
       }
       case "changeMz":
@@ -361,6 +420,9 @@ export function reducer(state: State, action: Action): State {
         draft.pickedLabel = action.compound.label;
         draft.targetRt = action.compound.rt;
         draft.targetRtWindow = action.compound.sd ?? defaultRtWindow;
+        draft.addedCompounds = draft.addedCompounds.filter(
+          (added) => added.compound.label !== action.compound.label,
+        );
         draft.metabolitesOpen = draft.wideScreen;
         forgetPeaks(draft);
         break;
@@ -372,6 +434,9 @@ export function reducer(state: State, action: Action): State {
         break;
       case "toggleInspect":
         draft.inspectOpen = !draft.inspectOpen;
+        break;
+      case "togglePanel":
+        draft.shownPanels[action.name] = !draft.shownPanels[action.name];
         break;
       case "setMinIntensity":
         if (action.value === draft.minIntensity) break;
@@ -475,18 +540,18 @@ export function reducer(state: State, action: Action): State {
         delete draft.outcomes[action.url];
         break;
       case "eicReady":
-        draft.outcomes[action.url] = {
+        storeOutcome(draft, action.url, {
           key: action.key,
           status: "ok",
           points: action.points,
-        };
+        });
         break;
       case "eicFailed":
-        draft.outcomes[action.url] = {
+        storeOutcome(draft, action.url, {
           key: action.key,
           status: "error",
           message: action.message,
-        };
+        });
         break;
       case "peakFound":
         draft.peaksByKey[action.key] = action.peak;
@@ -511,6 +576,10 @@ export function reducer(state: State, action: Action): State {
         const at = list.findIndex((compound) => compound.label === action.original);
         if (at === -1) break;
         list[at] = action.compound;
+        const added = draft.addedCompounds.find(
+          (item) => item.compound.label === action.original,
+        );
+        if (added) added.compound = action.compound;
         if (draft.pickedLabel === action.original) {
           draft.pickedLabel = action.compound.label;
           draft.pickedMz = action.compound.mz;
@@ -524,6 +593,9 @@ export function reducer(state: State, action: Action): State {
         const at = list.findIndex((compound) => compound.label === action.label);
         if (at === -1) break;
         list.splice(at, 1);
+        draft.addedCompounds = draft.addedCompounds.filter(
+          (item) => item.compound.label !== action.label,
+        );
         if (draft.pickedLabel === action.label) {
           draft.pickedLabel = null;
           draft.targetRt = null;
@@ -533,6 +605,7 @@ export function reducer(state: State, action: Action): State {
       case "replaceCompounds": {
         const id = getDatasetId(draft);
         draft.compoundEdits[id] = action.list;
+        draft.addedCompounds = keepListedCompounds(draft.addedCompounds, action.list);
         if (draft.pickedLabel !== null) {
           const stillThere = action.list.some(
             (compound) => compound.label === draft.pickedLabel,
@@ -568,7 +641,7 @@ export type PeakSettings = Pick<
   | "allowOverlap"
 >;
 
-export function peakOptions(settings: PeakSettings): PeakOptions {
+export function peakOptions(settings: PeakSettings): FindPeaksOptions {
   return {
     minIntensity: settings.minIntensity,
     minIntegral: settings.minIntegral,
@@ -621,15 +694,21 @@ export function datasetPath(state: Pick<State, "path" | "folderStack">): string 
 const emptyNames: string[] = [];
 const emptyEntries: Entry[] = [];
 const emptyPoints: Point[] = [];
-const emptyUrls: string[] = [];
+const emptyRequests: EicRequest[] = [];
 const emptyTraces: Trace[] = [];
 const emptyCompounds: Compound[] = [];
 
 export type TraceStatus = "idle" | "loading" | "ready" | "failed";
 
 export interface Trace {
+  id: string;
+  name: string;
   sample: string;
+  compound: Compound | null;
   url: string;
+  mz: number | null;
+  rt: number | null;
+  rtWindow: number;
   color: string;
   main: boolean;
   status: TraceStatus;
@@ -637,37 +716,62 @@ export interface Trace {
   message?: string;
 }
 
+export interface EicRequest {
+  url: string;
+  mzs: number[];
+}
+
 export type SelectionInput = Pick<
   State,
-  "path" | "samples" | "pickedSample" | "addedSamples"
+  "path" | "samples" | "pickedSample" | "addedSamples" | "addedCompounds" | "pickedMz"
 >;
 
 export type TraceInput = SelectionInput &
   EicSettings &
-  Pick<State, "pickedMz" | "files" | "outcomes">;
+  Pick<State, "pickedLabel" | "targetRt" | "targetRtWindow" | "files" | "outcomes">;
 
-function readEntries(input: SelectionInput): Entry[] {
+interface Target {
+  name: string;
+  mz: number | null;
+  rt: number | null;
+  rtWindow: number;
+}
+
+interface TracePiece {
+  url: string;
+  sample: string;
+  compound: Compound | null;
+  name: string;
+  target: Target;
+  styleIndex: number;
+  main: boolean;
+}
+
+function readEntries(input: Pick<State, "path" | "samples">): Entry[] {
   if (input.samples?.path !== input.path) return emptyEntries;
   if (input.samples.status !== "ok") return emptyEntries;
   return input.samples.entries ?? emptyEntries;
 }
 
-function readSampleEntries(input: SelectionInput): Entry[] {
+function readSampleEntries(input: Pick<State, "path" | "samples">): Entry[] {
   return readEntries(input).filter((entry) => entry.kind === "sample");
 }
 
-function readNames(input: SelectionInput): string[] {
+function readNames(input: Pick<State, "path" | "samples">): string[] {
   const found = readSampleEntries(input);
   return found.length === 0 ? emptyNames : found.map((entry) => entry.name);
 }
 
-function readUrls(input: SelectionInput): Map<string, string> {
+function readUrls(input: Pick<State, "path" | "samples">): Map<string, string> {
   const urls = new Map<string, string>();
   for (const entry of readSampleEntries(input)) urls.set(entry.name, entry.url);
   return urls;
 }
 
-function readMainSample(input: SelectionInput, names: string[]): string | null {
+function readMainSample(
+  input: Pick<State, "pickedSample">,
+  names: string[],
+): string | null {
   if (input.pickedSample && names.includes(input.pickedSample)) {
     return input.pickedSample;
   }
@@ -675,7 +779,7 @@ function readMainSample(input: SelectionInput, names: string[]): string | null {
 }
 
 function readShownSamples(
-  input: SelectionInput,
+  input: Pick<State, "addedSamples">,
   names: string[],
   main: string,
 ): AddedSample[] {
@@ -700,27 +804,71 @@ function readTraceStatus(
   return "loading";
 }
 
+function readMainTarget(input: TraceInput): Target {
+  const mz = input.pickedMz;
+  return {
+    name: input.pickedLabel ?? (mz === null ? "no metabolite" : `m/z ${mz}`),
+    mz,
+    rt: input.targetRt,
+    rtWindow: input.targetRtWindow,
+  };
+}
+
+function readCompoundTarget(compound: Compound): Target {
+  return {
+    name: compound.label,
+    mz: compound.mz,
+    rt: compound.rt,
+    rtWindow: compound.sd ?? defaultRtWindow,
+  };
+}
+
+function buildTrace(input: TraceInput, piece: TracePiece): Trace {
+  const { url, target } = piece;
+  const file = input.files[url];
+  const outcome =
+    target.mz === null ? undefined : input.outcomes[url]?.[eicKey(url, target.mz, input)];
+  return {
+    id: piece.compound ? `${url}|${piece.compound.label}` : url,
+    name: piece.name,
+    sample: piece.sample,
+    compound: piece.compound,
+    url,
+    mz: target.mz,
+    rt: target.rt,
+    rtWindow: target.rtWindow,
+    color: traceColor(piece.styleIndex),
+    main: piece.main,
+    status: readTraceStatus(target.mz, file, outcome),
+    points: outcome?.points ?? emptyPoints,
+    message: file?.status === "error" ? file.message : outcome?.message,
+  };
+}
+
 export function selectSampleNames(
   input: Pick<State, "path" | "samples">,
 ): Record<string, string> {
   const names: Record<string, string> = {};
-  for (const entry of readSampleEntries(input as SelectionInput)) {
+  for (const entry of readSampleEntries(input)) {
     names[entry.url] = entry.name;
   }
   return names;
 }
 
-export function selectOpenUrls(input: SelectionInput): string[] {
+export function selectEicRequests(input: SelectionInput): EicRequest[] {
   const names = readNames(input);
   const main = readMainSample(input, names);
-  if (!main) return emptyUrls;
+  if (!main) return emptyRequests;
   const urls = readUrls(input);
-  const found: string[] = [];
+  const mainMzs = input.pickedMz === null ? [] : [input.pickedMz];
+  const requests: EicRequest[] = [];
   for (const shown of readShownSamples(input, names, main)) {
     const url = urls.get(shown.name);
-    if (url) found.push(url);
+    if (!url) continue;
+    const mzs = shown.name === main ? readWantedMzs(input) : mainMzs;
+    requests.push({ url, mzs });
   }
-  return found;
+  return requests;
 }
 
 export function selectTraces(input: TraceInput): Trace[] {
@@ -728,46 +876,75 @@ export function selectTraces(input: TraceInput): Trace[] {
   const main = readMainSample(input, names);
   if (!main) return emptyTraces;
   const urls = readUrls(input);
-  const mz = input.pickedMz;
+  const showsCompounds = input.addedCompounds.length > 0;
+  const mainTarget = readMainTarget(input);
+  const traces: Trace[] = [];
 
-  return readShownSamples(input, names, main).map((shown) => {
-    const url = urls.get(shown.name) ?? "";
-    const file = input.files[url];
-    const stored = input.outcomes[url];
-    const outcome =
-      mz !== null && stored?.key === eicKey(url, mz, input) ? stored : undefined;
-    return {
-      sample: shown.name,
-      url,
-      color: traceColor(shown.styleIndex),
-      main: shown.name === main,
-      status: readTraceStatus(mz, file, outcome),
-      points: outcome?.points ?? emptyPoints,
-      message: file?.status === "error" ? file.message : outcome?.message,
-    };
-  });
+  for (const shown of readShownSamples(input, names, main)) {
+    traces.push(
+      buildTrace(input, {
+        url: urls.get(shown.name) ?? "",
+        sample: shown.name,
+        compound: null,
+        name: showsCompounds ? mainTarget.name : shown.name,
+        target: mainTarget,
+        styleIndex: shown.styleIndex,
+        main: shown.name === main,
+      }),
+    );
+  }
+
+  const mainUrl = urls.get(main) ?? "";
+  for (const added of input.addedCompounds) {
+    traces.push(
+      buildTrace(input, {
+        url: mainUrl,
+        sample: main,
+        compound: added.compound,
+        name: added.compound.label,
+        target: readCompoundTarget(added.compound),
+        styleIndex: added.styleIndex,
+        main: false,
+      }),
+    );
+  }
+  return traces;
 }
 
-export function selectSamplePeaks(
+export interface TracePeak {
+  id: string;
+  name: string;
+  color: string;
+  main: boolean;
+  peak: Peak;
+  ready: boolean;
+}
+
+export function tracePeakKey(trace: Trace, settings: EicSettings): string | null {
+  if (trace.mz === null) return null;
+  return peakKey(trace.url, trace.mz, settings, trace.rt, trace.rtWindow);
+}
+
+export function selectTracePeaks(
   traces: Trace[],
   peaksByKey: Record<string, Peak>,
-  mz: number | null,
   settings: EicSettings,
-  targetRt: number | null,
-  targetRtWindow: number,
-): SamplePeaks[] {
-  if (mz === null) return [];
-  return traces.map((trace) => {
-    const key = peakKey(trace.url, mz, settings, targetRt, targetRtWindow);
-    const found = peaksByKey[key];
-    return {
-      sample: trace.sample,
+): TracePeak[] {
+  const found: TracePeak[] = [];
+  for (const trace of traces) {
+    const key = tracePeakKey(trace, settings);
+    if (key === null) continue;
+    const peak = peaksByKey[key];
+    found.push({
+      id: trace.id,
+      name: trace.name,
       color: trace.color,
       main: trace.main,
-      peak: found ?? emptyPeak,
-      ready: found !== undefined,
-    };
-  });
+      peak: peak ?? emptyPeak,
+      ready: peak !== undefined,
+    });
+  }
+  return found;
 }
 
 export interface View {
@@ -805,9 +982,8 @@ export function selectView(state: State): View {
   const mz = state.pickedMz;
   const mainKey =
     mainUrl !== null && mz !== null ? eicKey(mainUrl, mz, state) : null;
-  const stored = mainUrl === null ? undefined : state.outcomes[mainUrl];
   const outcome =
-    mainKey !== null && stored?.key === mainKey ? stored : undefined;
+    mainUrl !== null && mainKey !== null ? state.outcomes[mainUrl]?.[mainKey] : undefined;
   const mainReady = outcome?.status === "ok";
   const mainPoints = outcome?.points ?? emptyPoints;
 

@@ -1,21 +1,22 @@
 import { memo } from "react";
-import type { SamplePeaks } from "../context/reducer";
+import type { TracePeak } from "../context/reducer";
 import { TraceSwatch } from "./TraceSwatch";
 
 interface PeakTableProps {
-  rows: SamplePeaks[];
+  rows: TracePeak[];
+  nameHeading: string;
 }
 
 function formatAmount(value: number): string {
   return value === 0 ? "0" : value.toExponential(2);
 }
 
-function PeakRow({ row }: { row: SamplePeaks }) {
+function PeakRow({ row }: { row: TracePeak }) {
   return (
     <tr>
       <td className="peak-sample">
         <TraceSwatch color={row.color} />
-        <span>{row.sample}</span>
+        <span>{row.name}</span>
         {row.main && <span className="peak-group-main">main</span>}
       </td>
       {!row.ready ? (
@@ -41,7 +42,7 @@ function PeakRow({ row }: { row: SamplePeaks }) {
   );
 }
 
-export const PeakTable = memo(function PeakTable({ rows }: PeakTableProps) {
+export const PeakTable = memo(function PeakTable({ rows, nameHeading }: PeakTableProps) {
   const foundCount = rows.filter((row) => row.peak.intensity > 0).length;
 
   return (
@@ -54,7 +55,7 @@ export const PeakTable = memo(function PeakTable({ rows }: PeakTableProps) {
         <table className="peaks">
           <thead>
             <tr>
-              <th>Sample</th>
+              <th>{nameHeading}</th>
               <th>RT</th>
               <th>Intensity</th>
               <th>Integral</th>
@@ -65,7 +66,7 @@ export const PeakTable = memo(function PeakTable({ rows }: PeakTableProps) {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <PeakRow key={row.sample} row={row} />
+              <PeakRow key={row.id} row={row} />
             ))}
           </tbody>
         </table>

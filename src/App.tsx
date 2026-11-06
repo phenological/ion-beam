@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { getTargetPeak } from "./ms/peaks";
 import { getBaseline } from "./ms/baseline";
 import { PathInput } from "./components/PathInput";
@@ -7,20 +7,25 @@ import { SampleList } from "./components/SampleList";
 import { FolderList } from "./components/FolderList";
 import { CompoundList } from "./components/CompoundList";
 import { ConfigPanel } from "./components/ConfigPanel";
-import { EicPlot } from "./components/EicPlot";
+import { PlotPanels, type PickedValue } from "./components/PlotPanels";
 import { PeakTable } from "./components/PeakTable";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { InspectPanel } from "./components/InspectPanel";
 import { TraceLegend } from "./components/TraceLegend";
+import { AnnotationPanel } from "./components/AnnotationPanel";
+import { buildMirrorPanel, useAnnotation } from "./context/useAnnotation";
+import { readSpectrumTarget } from "./context/useSpectra";
+import { useStableByKey } from "./utilities/useStableByKey";
 import { useAppDispatch, useAppState } from "./context/context";
 import {
   activePath,
-  peakKey,
   peakOptions,
   selectCompounds,
   selectView,
+  tracePeakKey,
+  type Trace,
 } from "./context/reducer";
-import { useSamplePeaks, useTraces } from "./context/useTraces";
+import { useTracePeaks, useTraces } from "./context/useTraces";
 import type { ZipProgress } from "./ms/zipClient";
 import { readBasename } from "./ms/uploads";
 import "./App.css";
@@ -29,12 +34,14 @@ function headline(
   mainSample: string | null,
   label: string | null,
   mz: number | null,
-  count: number,
+  traces: Trace[],
+  showsCompounds: boolean,
 ): string {
   if (!mainSample) return "Pick a sample";
+  if (showsCompounds) return `${mainSample} · ${traces.length} metabolites`;
   const target = label ?? (mz === null ? "no metabolite" : `m/z ${mz}`);
-  if (count < 2) return `${mainSample} · ${target}`;
-  return `${count} samples · ${target}`;
+  if (traces.length < 2) return `${mainSample} · ${target}`;
+  return `${traces.length} samples · ${target}`;
 }
 
 function describeUpload(progress: ZipProgress | null): string {
@@ -49,13 +56,24 @@ function App() {
   const view = selectView(state);
   const metabolites = selectCompounds(state);
   const traces = useTraces(state);
-  const samplePeaks = useSamplePeaks(state, traces);
+  const tracePeaks = useTracePeaks(state, traces);
+  const showsCompounds = state.addedCompounds.length > 0;
 
   const sampleColors = useMemo(() => {
     const colors: Record<string, string> = {};
-    for (const trace of traces) colors[trace.sample] = trace.color;
+    for (const trace of traces) colors[trace.sample] ??= trace.color;
     return colors;
   }, [traces]);
+
+  const compoundColors = useMemo(() => {
+    const colors: Record<string, string> = {};
+    if (!showsCompounds) return colors;
+    for (const trace of traces) {
+      const label = trace.compound?.label ?? (trace.main ? state.pickedLabel : null);
+      if (label !== null) colors[label] = trace.color;
+    }
+    return colors;
+  }, [traces, showsCompounds, state.pickedLabel]);
 
   const baseline = useMemo(
     () =>
@@ -65,15 +83,35 @@ function App() {
 
   const annotateRt = state.annotate && state.targetRt !== null ? state.targetRt : null;
   const mainTrace = traces.find((trace) => trace.main) ?? null;
-  const mainPeak = samplePeaks.find((group) => group.main)?.peak ?? null;
+  const mainRow = tracePeaks.find((row) => row.main);
+  const mainPeak = mainRow?.ready ? mainRow.peak : null;
+  const peakPending = state.autoPeakPicking && mainRow !== undefined && !mainRow.ready;
+  const mainPeaks = useMemo(
+    () => (mainPeak && mainPeak.intensity > 0 ? [mainPeak] : []),
+    [mainPeak],
+  );
+  const freshTarget = view.mainReady ? readSpectrumTarget(traces, mainPeak, peakPending) : null;
+  const target = useStableByKey(freshTarget, freshTarget?.key ?? "");
+  const [pickedRt, setPickedRt] = useState<PickedValue | null>(null);
+  const targetKey = target?.key ?? "";
+  const shownRt = pickedRt?.key === targetKey ? pickedRt.value : (target?.rt ?? null);
+  const annotationTarget = useMemo(() => (target ? { ...target, rt: shownRt } : null), [target, shownRt]);
+  const annotation = useAnnotation(state.annotate, annotationTarget);
+  const [pickedMatch, setPickedMatch] = useState({ key: "", rank: 0 });
+  const matchRank = pickedMatch.key === annotation.key ? pickedMatch.rank : 0;
+  const selectedMatch = annotation.result?.matches[matchRank] ?? null;
+  const mirror = useMemo(
+    () => (selectedMatch ? buildMirrorPanel(annotation.result?.query ?? null, selectedMatch) : null),
+    [selectedMatch, annotation.result],
+  );
 
   function runPeakPicking() {
-    if (view.mz === null) return;
     const options = peakOptions(state);
     for (const trace of traces) {
       if (trace.status !== "ready") continue;
-      const key = peakKey(trace.url, view.mz, state, state.targetRt, state.targetRtWindow);
-      const peak = getTargetPeak(trace.points, state.targetRt, state.targetRtWindow, options);
+      const key = tracePeakKey(trace, state);
+      if (key === null) continue;
+      const peak = getTargetPeak(trace.points, trace.rt, trace.rtWindow, options);
       dispatch({ type: "peakFound", key, peak });
     }
   }
@@ -159,8 +197,8 @@ function App() {
         <header className="content-head">
           <div className="content-head-text">
             <h1 className="content-title">Displayer</h1>
-            <p className="content-sub" title={traces.map((trace) => trace.sample).join(", ")}>
-              {headline(view.mainSample, state.pickedLabel, view.mz, traces.length)}
+            <p className="content-sub" title={traces.map((trace) => trace.name).join(", ")}>
+              {headline(view.mainSample, state.pickedLabel, view.mz, traces, showsCompounds)}
             </p>
           </div>
           {!state.autoPeakPicking && (
@@ -213,20 +251,30 @@ function App() {
               )}
               {traces.length > 1 && <TraceLegend traces={traces} />}
               {view.mainReady && (
-                <EicPlot
+                <PlotPanels
                   traces={traces}
-                  peaks={
-                    mainPeak && mainPeak.intensity > 0 ? [mainPeak] : []
-                  }
+                  peaks={mainPeaks}
                   baseline={baseline}
                   annotateRt={annotateRt}
+                  annotate={state.annotate}
+                  mirror={mirror}
+                  pickedRt={pickedRt}
+                  onPickRt={setPickedRt}
+                  mainPeak={mainPeak}
+                  peakPending={peakPending}
+                  shown={state.shownPanels}
+                  ppm={state.ppm}
+                  mzTol={state.mzTol}
                 />
               )}
             </section>
           )}
 
-          {samplePeaks.some((group) => group.ready) && (
-            <PeakTable rows={samplePeaks} />
+          {tracePeaks.some((row) => row.ready) && (
+            <PeakTable
+              rows={tracePeaks}
+              nameHeading={showsCompounds ? "Metabolite" : "Sample"}
+            />
           )}
         </div>
 
@@ -278,7 +326,15 @@ function App() {
             <CompoundList
               compounds={metabolites.list}
               selectedLabel={state.pickedLabel}
+              compoundColors={compoundColors}
             />
+            {state.annotate && (
+              <AnnotationPanel
+                annotation={annotation}
+                selectedRank={matchRank}
+                onSelect={(rank) => setPickedMatch({ key: annotation.key, rank })}
+              />
+            )}
           </div>
         )}
       </aside>

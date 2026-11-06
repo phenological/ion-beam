@@ -1,9 +1,9 @@
-import { getPeak, type Peak, type PeakOptions } from "quantion";
+import { getPeak, type FindPeaksOptions, type Peak } from "quantion";
 import type { Point } from "./eic";
 
 export type { Peak };
 
-const defaultOptions: PeakOptions = { autoNoise: true, autoBaseline: true };
+const defaultOptions: FindPeaksOptions = { autoNoise: true, autoBaseline: true };
 
 export const emptyPeak: Peak = {
   from: 0,
@@ -12,14 +12,13 @@ export const emptyPeak: Peak = {
   integral: 0,
   intensity: 0,
   nPoints: 0,
-  noise: 0,
 };
 
 export function getTargetPeak(
   points: Point[],
   rt: number | null,
   range: number,
-  options?: PeakOptions,
+  options?: FindPeaksOptions,
 ): Peak {
   if (rt === null || points.length < 3) return emptyPeak;
   const times = new Float64Array(points.length);
@@ -28,5 +27,5 @@ export function getTargetPeak(
     times[i] = points[i].x;
     intensities[i] = points[i].y;
   }
-  return getPeak(times, intensities, rt, range, { ...defaultOptions, ...options });
+  return getPeak(times, intensities, rt, { range, findPeaks: { ...defaultOptions, ...options } });
 }

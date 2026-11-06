@@ -1,19 +1,28 @@
 import { useMemo } from "react";
 import {
-  selectOpenUrls,
-  selectSamplePeaks,
+  selectEicRequests,
   selectSampleNames,
+  selectTracePeaks,
   selectTraces,
-  type SamplePeaks,
+  type EicRequest,
   type State,
   type Trace,
+  type TracePeak,
 } from "./reducer";
 
-export function useOpenUrls(state: State): string[] {
-  const { path, samples, pickedSample, addedSamples } = state;
+export function useEicRequests(state: State): EicRequest[] {
+  const { path, samples, pickedSample, addedSamples, addedCompounds, pickedMz } = state;
   return useMemo(
-    () => selectOpenUrls({ path, samples, pickedSample, addedSamples }),
-    [path, samples, pickedSample, addedSamples],
+    () =>
+      selectEicRequests({
+        path,
+        samples,
+        pickedSample,
+        addedSamples,
+        addedCompounds,
+        pickedMz,
+      }),
+    [path, samples, pickedSample, addedSamples, addedCompounds, pickedMz],
   );
 }
 
@@ -28,7 +37,11 @@ export function useTraces(state: State): Trace[] {
     samples,
     pickedSample,
     addedSamples,
+    addedCompounds,
     pickedMz,
+    pickedLabel,
+    targetRt,
+    targetRtWindow,
     rtFrom,
     rtTo,
     ppm,
@@ -43,7 +56,11 @@ export function useTraces(state: State): Trace[] {
         samples,
         pickedSample,
         addedSamples,
+        addedCompounds,
         pickedMz,
+        pickedLabel,
+        targetRt,
+        targetRtWindow,
         rtFrom,
         rtTo,
         ppm,
@@ -56,7 +73,11 @@ export function useTraces(state: State): Trace[] {
       samples,
       pickedSample,
       addedSamples,
+      addedCompounds,
       pickedMz,
+      pickedLabel,
+      targetRt,
+      targetRtWindow,
       rtFrom,
       rtTo,
       ppm,
@@ -67,19 +88,10 @@ export function useTraces(state: State): Trace[] {
   );
 }
 
-export function useSamplePeaks(state: State, traces: Trace[]): SamplePeaks[] {
-  const { peaksByKey, pickedMz, rtFrom, rtTo, ppm, mzTol, targetRt, targetRtWindow } =
-    state;
+export function useTracePeaks(state: State, traces: Trace[]): TracePeak[] {
+  const { peaksByKey, rtFrom, rtTo, ppm, mzTol } = state;
   return useMemo(
-    () =>
-      selectSamplePeaks(
-        traces,
-        peaksByKey,
-        pickedMz,
-        { rtFrom, rtTo, ppm, mzTol },
-        targetRt,
-        targetRtWindow,
-      ),
-    [traces, peaksByKey, pickedMz, rtFrom, rtTo, ppm, mzTol, targetRt, targetRtWindow],
+    () => selectTracePeaks(traces, peaksByKey, { rtFrom, rtTo, ppm, mzTol }),
+    [traces, peaksByKey, rtFrom, rtTo, ppm, mzTol],
   );
 }

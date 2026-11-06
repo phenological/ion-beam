@@ -3,21 +3,59 @@ import { closeFile, openFile, readEic } from "../ms/ionClient";
 import { endQuery, startQuery } from "../ms/queryTimer";
 import { eicKey, readError, type Action } from "./reducer";
 
-interface SampleLoaderProps {
-  url: string;
-  name: string;
-  mz: number | null;
+interface EicSettingsProps {
   rtFrom: number;
   rtTo: number;
   ppm: number;
   mzTol: number;
+}
+
+interface SampleLoaderProps extends EicSettingsProps {
+  url: string;
+  name: string;
+  mzs: number[];
   dispatch: Dispatch<Action>;
 }
+
+interface EicLoaderProps extends EicSettingsProps {
+  url: string;
+  mz: number;
+  dispatch: Dispatch<Action>;
+}
+
+const EicLoader = memo(function EicLoader({
+  url,
+  mz,
+  rtFrom,
+  rtTo,
+  ppm,
+  mzTol,
+  dispatch,
+}: EicLoaderProps) {
+  const startedKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    const key = eicKey(url, mz, { rtFrom, rtTo, ppm, mzTol });
+    if (startedKey.current === key) return;
+    startedKey.current = key;
+    startQuery();
+    readEic(url, mz, { from: rtFrom, to: rtTo }, ppm, mzTol)
+      .finally(endQuery)
+      .then((points) => {
+        dispatch({ type: "eicReady", url, key, points });
+      })
+      .catch((error: unknown) => {
+        dispatch({ type: "eicFailed", url, key, message: readError(error) });
+      });
+  }, [mz, url, rtFrom, rtTo, ppm, mzTol, dispatch]);
+
+  return null;
+});
 
 export const SampleLoader = memo(function SampleLoader({
   url,
   name,
-  mz,
+  mzs,
   rtFrom,
   rtTo,
   ppm,
@@ -25,7 +63,6 @@ export const SampleLoader = memo(function SampleLoader({
   dispatch,
 }: SampleLoaderProps) {
   const [ready, setReady] = useState(false);
-  const running = useRef(new Set<string>());
 
   useEffect(() => {
     let live = true;
@@ -50,25 +87,17 @@ export const SampleLoader = memo(function SampleLoader({
     };
   }, [url, name, dispatch]);
 
-  useEffect(() => {
-    if (!ready || mz === null) return;
-    const key = eicKey(url, mz, { rtFrom, rtTo, ppm, mzTol });
-    const started = running.current;
-    if (started.has(key)) return;
-    started.add(key);
-    startQuery();
-    readEic(url, mz, { from: rtFrom, to: rtTo }, ppm, mzTol)
-      .finally(endQuery)
-      .then((points) => {
-        dispatch({ type: "eicReady", url, key, points });
-      })
-      .catch((error: unknown) => {
-        dispatch({ type: "eicFailed", url, key, message: readError(error) });
-      })
-      .finally(() => {
-        started.delete(key);
-      });
-  }, [ready, mz, url, rtFrom, rtTo, ppm, mzTol, dispatch]);
-
-  return null;
+  if (!ready) return null;
+  return mzs.map((mz) => (
+    <EicLoader
+      key={mz}
+      url={url}
+      mz={mz}
+      rtFrom={rtFrom}
+      rtTo={rtTo}
+      ppm={ppm}
+      mzTol={mzTol}
+      dispatch={dispatch}
+    />
+  ));
 });

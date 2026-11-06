@@ -99,7 +99,7 @@ export const SampleList = memo(function SampleList({
                     dispatch({ type: "pickSample", name });
                   }}
                 >
-                  <span className="sample-pen">
+                  <span className="trace-pen">
                     {color && <TraceSwatch color={color} />}
                   </span>
                   <span className="sample-name">{name}</span>
@@ -107,7 +107,7 @@ export const SampleList = memo(function SampleList({
                 {!isMain && (
                   <button
                     type="button"
-                    className={shown ? "sample-add on" : "sample-add"}
+                    className={shown ? "overlay-add on" : "overlay-add"}
                     title={readAddHint(name, shown, colorsRepeat)}
                     aria-label={readAddHint(name, shown, colorsRepeat)}
                     aria-pressed={shown}

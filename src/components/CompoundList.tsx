@@ -3,6 +3,7 @@ import type { Compound } from "../data/compounds";
 import { useAppDispatch } from "../context/context";
 import { CompoundForm } from "./CompoundForm";
 import { CompoundMenu } from "./CompoundMenu";
+import { TraceSwatch } from "./TraceSwatch";
 
 type SortKey = "id" | "mz" | "rt";
 type SortDir = "asc" | "desc";
@@ -11,6 +12,7 @@ type FormState = { mode: "add" } | { mode: "edit"; compound: Compound } | null;
 interface CompoundListProps {
   compounds: Compound[];
   selectedLabel: string | null;
+  compoundColors: Record<string, string>;
 }
 
 function sortCompounds(compounds: Compound[], key: SortKey, dir: SortDir): Compound[] {
@@ -49,6 +51,11 @@ function findNextCompound(
   return list[nextIndex];
 }
 
+function readOverlayHint(label: string, shown: boolean): string {
+  if (shown) return `Remove ${label} from the chart`;
+  return `Overlay ${label} on the picked sample`;
+}
+
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName;
@@ -58,6 +65,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 export const CompoundList = memo(function CompoundList({
   compounds,
   selectedLabel,
+  compoundColors,
 }: CompoundListProps) {
   const dispatch = useAppDispatch();
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
@@ -153,8 +161,24 @@ export const CompoundList = memo(function CompoundList({
         {sorted.map((compound) => {
           const isActive = compound.label === selectedLabel;
           const isArmed = compound.label === armedLabel;
+          const color = compoundColors[compound.label];
+          const shown = color !== undefined;
           return (
             <li key={compound.label} className="compound-row">
+              {isActive ? (
+                <span className="overlay-space" />
+              ) : (
+                <button
+                  type="button"
+                  className={shown ? "overlay-add on" : "overlay-add"}
+                  title={readOverlayHint(compound.label, shown)}
+                  aria-label={readOverlayHint(compound.label, shown)}
+                  aria-pressed={shown}
+                  onClick={() => dispatch({ type: "toggleCompound", compound })}
+                >
+                  {shown ? "−" : "+"}
+                </button>
+              )}
               <button
                 type="button"
                 className={isActive ? "compound-item active" : "compound-item"}
@@ -163,6 +187,7 @@ export const CompoundList = memo(function CompoundList({
                 onClick={() => dispatch({ type: "pickCompound", compound })}
                 onDoubleClick={() => setArmedLabel(compound.label)}
               >
+                <span className="trace-pen">{color && <TraceSwatch color={color} />}</span>
                 <span className="compound-id">{compound.label}</span>
                 <span className="compound-mz">{compound.mz}</span>
                 <span className="compound-rt">{compound.rt}</span>

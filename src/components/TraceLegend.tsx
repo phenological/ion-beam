@@ -16,15 +16,23 @@ function readState(trace: Trace): string {
 export const TraceLegend = memo(function TraceLegend({ traces }: TraceLegendProps) {
   const dispatch = useAppDispatch();
 
+  function removeTrace(trace: Trace) {
+    if (trace.compound) {
+      dispatch({ type: "toggleCompound", compound: trace.compound });
+      return;
+    }
+    dispatch({ type: "toggleSample", name: trace.sample });
+  }
+
   return (
     <ul className="trace-legend">
       {traces.map((trace) => {
         const state = readState(trace);
         return (
-          <li key={trace.url} className="trace-item">
+          <li key={trace.id} className="trace-item">
             <TraceSwatch color={trace.color} />
-            <span className="trace-name" title={trace.sample}>
-              {trace.sample}
+            <span className="trace-name" title={trace.name}>
+              {trace.name}
             </span>
             {state && (
               <span
@@ -38,8 +46,8 @@ export const TraceLegend = memo(function TraceLegend({ traces }: TraceLegendProp
               <button
                 type="button"
                 className="trace-remove"
-                title={`Remove ${trace.sample} from the chart`}
-                onClick={() => dispatch({ type: "toggleSample", name: trace.sample })}
+                title={`Remove ${trace.name} from the chart`}
+                onClick={() => removeTrace(trace)}
               >
                 ×
               </button>

@@ -2,7 +2,8 @@ import IonWorker from "./ionWorker?worker";
 import type { Point } from "./eic";
 import { applySnapshot } from "./traffic";
 import { getUploadBytes } from "./uploads";
-import type { AskWorker, WorkerSays } from "./workerMessages";
+import type { ScanQuery } from "quantion";
+import type { AskWorker, FeatureMatches, ScanData, ScanFilter, WorkerSays } from "./workerMessages";
 
 interface Waiting {
   resolve: (result: WorkerSays) => void;
@@ -107,6 +108,32 @@ export async function readEic(
     points[i] = { x: says.x[i], y: says.y[i] };
   }
   return points;
+}
+
+export async function readScans(
+  url: string,
+  query: ScanQuery,
+  level: number,
+  filter: ScanFilter,
+): Promise<ScanData[]> {
+  const at = workerForUrl.get(url);
+  if (at === undefined) throw new Error("the file is no longer open");
+  const says = await ask(at, { type: "scans", id: nextId++, url, query, level, filter });
+  if (says.type !== "scans") throw new Error("the reader answered the wrong question");
+  return says.scans;
+}
+
+export async function annotateFeature(
+  url: string,
+  mz: number,
+  rt: number,
+  sources: { library: string; model: string; matches: number },
+): Promise<FeatureMatches> {
+  const at = workerForUrl.get(url);
+  if (at === undefined) throw new Error("the file is no longer open");
+  const says = await ask(at, { type: "annotate", id: nextId++, url, mz, rt, ...sources });
+  if (says.type !== "annotation") throw new Error("the reader answered the wrong question");
+  return says.annotation;
 }
 
 export function closeFile(url: string): void {

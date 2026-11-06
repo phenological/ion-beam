@@ -1,4 +1,4 @@
-import { init, parseIon, parseMzML, type SampleFile } from "quantion";
+import { init, parseIon, parseMzml, type SampleFile } from "quantion";
 import { toFetchable } from "./remote";
 
 const cacheSize = 16 * 1024 * 1024;
@@ -14,6 +14,6 @@ export async function openSampleBytes(
   name: string,
 ): Promise<SampleFile> {
   await init();
-  if (name.toLowerCase().endsWith(".mzml")) return parseMzML(bytes);
+  if (name.toLowerCase().endsWith(".mzml")) return parseMzml(bytes);
   return parseIon(bytes, { maxCacheSize: cacheSize });
 }
