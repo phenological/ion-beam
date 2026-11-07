@@ -46,16 +46,17 @@ function MatchCard({ match, rank, isSelected, onSelect }: MatchCardProps) {
 
 interface AnnotationPanelProps {
   annotation: AnnotationState;
+  height: number;
   selectedRank: number;
   onSelect: (rank: number) => void;
 }
 
-export const AnnotationPanel = memo(function AnnotationPanel({ annotation, selectedRank, onSelect }: AnnotationPanelProps) {
+export const AnnotationPanel = memo(function AnnotationPanel({ annotation, height, selectedRank, onSelect }: AnnotationPanelProps) {
   const message = readMessage(annotation);
   const matches = annotation.result?.matches ?? [];
 
   return (
-    <div className="annotation-panel">
+    <div className="annotation-panel" style={{ height }}>
       <span className="sidebar-label">Annotation</span>
       {message !== null ? (
         <p className={annotation.status === "failed" ? "banner banner-error" : "banner"}>{message}</p>

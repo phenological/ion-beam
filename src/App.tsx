@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { getTargetPeak } from "./ms/peaks";
 import { getBaseline } from "./ms/baseline";
 import { PathInput } from "./components/PathInput";
@@ -13,9 +13,12 @@ import { ResizeHandle } from "./components/ResizeHandle";
 import { InspectPanel } from "./components/InspectPanel";
 import { TraceLegend } from "./components/TraceLegend";
 import { AnnotationPanel } from "./components/AnnotationPanel";
+import { HeightHandle } from "./components/HeightHandle";
+import { automaticHeights, type PanelHeights, type PanelName } from "./utilities/savedPanels";
 import { buildMirrorPanel, useAnnotation } from "./context/useAnnotation";
 import { readSpectrumTarget } from "./context/useSpectra";
 import { useStableByKey } from "./utilities/useStableByKey";
+import { toLayoutPx } from "./utilities/uiZoom";
 import { useAppDispatch, useAppState } from "./context/context";
 import {
   activePath,
@@ -49,6 +52,8 @@ function describeUpload(progress: ZipProgress | null): string {
   const step = Math.min(progress.done + 1, progress.total);
   return `Reading ${readBasename(progress.current)} (${step} of ${progress.total})…`;
 }
+
+const defaultAnnotationHeight = 300;
 
 function App() {
   const state = useAppState();
@@ -93,6 +98,14 @@ function App() {
   const freshTarget = view.mainReady ? readSpectrumTarget(traces, mainPeak, peakPending) : null;
   const target = useStableByKey(freshTarget, freshTarget?.key ?? "");
   const [pickedRt, setPickedRt] = useState<PickedValue | null>(null);
+  const [plotHeights, setPlotHeights] = useState<PanelHeights>(automaticHeights);
+  const [annotationHeight, setAnnotationHeight] = useState(defaultAnnotationHeight);
+  const [settingsHeight, setSettingsHeight] = useState<number | null>(null);
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const resizePlot = useCallback(
+    (name: PanelName, height: number | null) => setPlotHeights((current) => ({ ...current, [name]: height })),
+    [],
+  );
   const targetKey = target?.key ?? "";
   const shownRt = pickedRt?.key === targetKey ? pickedRt.value : (target?.rt ?? null);
   const annotationTarget = useMemo(() => (target ? { ...target, rt: shownRt } : null), [target, shownRt]);
@@ -258,6 +271,8 @@ function App() {
                   annotateRt={annotateRt}
                   annotate={state.annotate}
                   mirror={mirror}
+                  match={selectedMatch}
+                  annotationPending={annotation.status === "loading"}
                   pickedRt={pickedRt}
                   onPickRt={setPickedRt}
                   mainPeak={mainPeak}
@@ -265,6 +280,8 @@ function App() {
                   shown={state.shownPanels}
                   ppm={state.ppm}
                   mzTol={state.mzTol}
+                  heights={plotHeights}
+                  onResize={resizePlot}
                 />
               )}
             </section>
@@ -283,7 +300,7 @@ function App() {
       {state.metabolitesOpen && (
         <ResizeHandle
           onResize={(cursorX) =>
-            dispatch({ type: "setMetabolitesWidth", value: window.innerWidth - cursorX })
+            dispatch({ type: "setMetabolitesWidth", value: toLayoutPx(window.innerWidth) - cursorX })
           }
         />
       )}
@@ -315,26 +332,48 @@ function App() {
           )}
         </div>
         {state.metabolitesOpen && (
-          <div className="sidebar-body">
-            <ConfigPanel />
-            {metabolites.failed && (
-              <p className="banner banner-error">
-                Could not load the metabolite list: {metabolites.message}
-              </p>
-            )}
-            {metabolites.loading && <p className="banner">Loading metabolites…</p>}
-            <CompoundList
-              compounds={metabolites.list}
-              selectedLabel={state.pickedLabel}
-              compoundColors={compoundColors}
+          <div className="sidebar-body sections">
+            <div
+              ref={settingsRef}
+              className="sidebar-section"
+              style={settingsHeight === null ? undefined : { height: settingsHeight }}
+            >
+              <ConfigPanel />
+            </div>
+            <HeightHandle
+              height={settingsHeight ?? 0}
+              measure={settingsRef}
+              onResize={setSettingsHeight}
+              onReset={() => setSettingsHeight(null)}
             />
             {state.annotate && (
-              <AnnotationPanel
-                annotation={annotation}
-                selectedRank={matchRank}
-                onSelect={(rank) => setPickedMatch({ key: annotation.key, rank })}
-              />
+              <>
+                <AnnotationPanel
+                  annotation={annotation}
+                  height={annotationHeight}
+                  selectedRank={matchRank}
+                  onSelect={(rank) => setPickedMatch({ key: annotation.key, rank })}
+                />
+                <HeightHandle
+                  height={annotationHeight}
+                  onResize={setAnnotationHeight}
+                  onReset={() => setAnnotationHeight(defaultAnnotationHeight)}
+                />
+              </>
             )}
+            <div className="sidebar-section compounds">
+              {metabolites.failed && (
+                <p className="banner banner-error">
+                  Could not load the metabolite list: {metabolites.message}
+                </p>
+              )}
+              {metabolites.loading && <p className="banner">Loading metabolites…</p>}
+              <CompoundList
+                compounds={metabolites.list}
+                selectedLabel={state.pickedLabel}
+                compoundColors={compoundColors}
+              />
+            </div>
           </div>
         )}
       </aside>

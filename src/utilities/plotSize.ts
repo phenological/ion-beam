@@ -1,3 +1,4 @@
+import { toLayoutPx, uiZoom } from "./uiZoom";
 import { useEffect, useRef, useState, type RefObject } from "react";
 
 const tallestPlot = 460;
@@ -17,10 +18,10 @@ function readPlotHeight(width: number, screenHeight: number): number {
 }
 
 function useScreenHeight(): number {
-  const [height, setHeight] = useState(() => globalThis.innerHeight || 800);
+  const [height, setHeight] = useState(() => toLayoutPx(globalThis.innerHeight || 800));
 
   useEffect(() => {
-    const update = () => setHeight(globalThis.innerHeight);
+    const update = () => setHeight(toLayoutPx(globalThis.innerHeight));
     globalThis.addEventListener("resize", update);
     return () => globalThis.removeEventListener("resize", update);
   }, []);
@@ -32,6 +33,7 @@ export interface PlotSize {
   wrap: RefObject<HTMLDivElement | null>;
   width: number;
   height: number;
+  plotHeight: number;
 }
 
 export function usePlotSize(shareOfHeight = 1, chosenHeight: number | null = null): PlotSize {
@@ -50,6 +52,6 @@ export function usePlotSize(shareOfHeight = 1, chosenHeight: number | null = nul
     return () => observer.disconnect();
   }, []);
 
-  const height = chosenHeight ?? Math.max(shortestPlot, Math.round(readPlotHeight(width, screenHeight) * shareOfHeight));
-  return { wrap, width, height };
+  const height = chosenHeight ?? Math.max(shortestPlot, Math.round(readPlotHeight(toLayoutPx(width), screenHeight) * shareOfHeight));
+  return { wrap, width, height, plotHeight: Math.round(height * uiZoom) };
 }

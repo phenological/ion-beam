@@ -126,7 +126,7 @@ interface SpectrumPlotProps {
 
 function readBody(panel: SpectrumPanel, emptyHint: string): string | null {
   if (panel.status === "idle") return emptyHint;
-  if (panel.status === "loading") return "Loading scans…";
+  if (panel.status === "loading") return panel.message ?? "Loading scans…";
   if (panel.status === "failed") return `Could not read the scans: ${panel.message}`;
   if (panel.lines.length === 0) return panel.message ?? "No scans";
   return null;
@@ -142,7 +142,7 @@ export const SpectrumPlot = memo(function SpectrumPlot({
   chosenHeight = null,
   onResize,
 }: SpectrumPlotProps) {
-  const { wrap, width, height } = usePlotSize(shareOfHeight, chosenHeight);
+  const { wrap, width, height, plotHeight } = usePlotSize(shareOfHeight, chosenHeight);
   const body = readBody(panel, emptyHint);
   const canPick = body === null && onPickMz !== undefined;
 
@@ -166,14 +166,14 @@ export const SpectrumPlot = memo(function SpectrumPlot({
               xMax={panel.xMax}
               markMz={panel.markMz}
               width={width}
-              height={height}
+              height={plotHeight}
               onPickMz={canPick ? onPickMz : undefined}
             />
           </PlotController>
         ) : (
           <div
             className={panel.status === "failed" ? "plot-empty failed" : "plot-empty"}
-            style={{ height }}
+            style={{ height: plotHeight }}
           >
             {body}
           </div>

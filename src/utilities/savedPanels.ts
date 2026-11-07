@@ -2,6 +2,14 @@ export type PanelName = "chromatogram" | "ms1" | "ms2";
 
 export type ShownPanels = Record<PanelName, boolean>;
 
+export type PanelHeights = Record<PanelName, number | null>;
+
+export const automaticHeights: PanelHeights = {
+  chromatogram: null,
+  ms1: null,
+  ms2: null,
+};
+
 export const panelNames: PanelName[] = ["chromatogram", "ms1", "ms2"];
 
 const panelStore = "ion-beam.shownPanels";

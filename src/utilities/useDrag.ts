@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toLayoutPx } from "./uiZoom";
 
 export interface Offset {
   x: number;
@@ -17,9 +18,9 @@ const emptyBounds: Bounds = { baseLeft: 0, baseTop: 0, width: 0, height: 0 };
 
 function clampOffset(offset: Offset, bounds: Bounds): Offset {
   const minX = -bounds.baseLeft;
-  const maxX = window.innerWidth - bounds.width - bounds.baseLeft;
+  const maxX = toLayoutPx(window.innerWidth) - bounds.width - bounds.baseLeft;
   const minY = -bounds.baseTop;
-  const maxY = window.innerHeight - bounds.height - bounds.baseTop;
+  const maxY = toLayoutPx(window.innerHeight) - bounds.height - bounds.baseTop;
 
   return {
     x: Math.min(Math.max(offset.x, Math.min(minX, maxX)), Math.max(minX, maxX)),
@@ -42,10 +43,10 @@ export function useDrag() {
 
     const rect = panel.getBoundingClientRect();
     bounds.current = {
-      baseLeft: rect.left - offset.x,
-      baseTop: rect.top - offset.y,
-      width: rect.width,
-      height: rect.height,
+      baseLeft: toLayoutPx(rect.left) - offset.x,
+      baseTop: toLayoutPx(rect.top) - offset.y,
+      width: toLayoutPx(rect.width),
+      height: toLayoutPx(rect.height),
     };
     origin.current = offset;
     pointer.current = { x: event.clientX, y: event.clientY };
@@ -56,8 +57,8 @@ export function useDrag() {
 
     function move(moveEvent: PointerEvent) {
       const next = {
-        x: origin.current.x + moveEvent.clientX - pointer.current.x,
-        y: origin.current.y + moveEvent.clientY - pointer.current.y,
+        x: origin.current.x + toLayoutPx(moveEvent.clientX - pointer.current.x),
+        y: origin.current.y + toLayoutPx(moveEvent.clientY - pointer.current.y),
       };
       setOffset(clampOffset(next, bounds.current));
     }
@@ -82,10 +83,10 @@ export function useDrag() {
       setOffset((current) => {
         const rect = panel.getBoundingClientRect();
         return clampOffset(current, {
-          baseLeft: rect.left - current.x,
-          baseTop: rect.top - current.y,
-          width: rect.width,
-          height: rect.height,
+          baseLeft: toLayoutPx(rect.left) - current.x,
+          baseTop: toLayoutPx(rect.top) - current.y,
+          width: toLayoutPx(rect.width),
+          height: toLayoutPx(rect.height),
         });
       });
     }

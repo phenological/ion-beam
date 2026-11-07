@@ -29,6 +29,10 @@ body,
   height: 100%;
 }
 
+#root {
+  zoom: var(--ui-zoom, 1);
+}
+
 body {
   margin: 0;
   font: 13px/1.4 var(--sans);

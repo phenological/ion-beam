@@ -1,3 +1,5 @@
+import { toLayoutPx } from "../utilities/uiZoom";
+
 interface ResizeHandleProps {
   onResize: (cursorX: number) => void;
 }
@@ -7,7 +9,7 @@ export function ResizeHandle({ onResize }: ResizeHandleProps) {
     document.body.classList.add("resizing");
 
     function move(event: MouseEvent) {
-      onResize(event.clientX);
+      onResize(toLayoutPx(event.clientX));
     }
 
     function stop() {

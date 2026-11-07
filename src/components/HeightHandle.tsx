@@ -1,21 +1,27 @@
+import type { RefObject } from "react";
+import { toLayoutPx } from "../utilities/uiZoom";
 import { shortestPlot, tallestChosenPlot } from "../utilities/plotSize";
 
 interface HeightHandleProps {
   height: number;
   onResize: (height: number) => void;
   onReset: () => void;
+  measure?: RefObject<HTMLElement | null>;
 }
 
 function clampHeight(height: number): number {
   return Math.min(tallestChosenPlot, Math.max(shortestPlot, Math.round(height)));
 }
 
-export function HeightHandle({ height, onResize, onReset }: HeightHandleProps) {
+export function HeightHandle({ height, onResize, onReset, measure }: HeightHandleProps) {
   function start(startY: number) {
+    const node = measure?.current;
+    const startHeight = node ? toLayoutPx(node.getBoundingClientRect().height) : height;
     document.body.classList.add("resizing-rows");
 
     function move(event: MouseEvent) {
-      onResize(clampHeight(height + event.clientY - startY));
+      const moved = toLayoutPx(event.clientY - startY);
+      onResize(clampHeight(startHeight + moved));
     }
 
     function stop() {

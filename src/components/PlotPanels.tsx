@@ -11,10 +11,13 @@ import {
 } from "../context/useSpectra";
 import {
   panelNames,
+  type PanelHeights,
   type PanelName,
   type ShownPanels,
 } from "../utilities/savedPanels";
 import { useStableByKey } from "../utilities/useStableByKey";
+import { addLibraryMatch } from "../context/useAnnotation";
+import type { LibraryMatch } from "../ms/workerMessages";
 import { EicPlot } from "./EicPlot";
 import { SpectrumPlot } from "./SpectrumPlot";
 
@@ -36,6 +39,8 @@ interface PlotPanelsProps {
   annotateRt: number | null;
   annotate: boolean;
   mirror: SpectrumPanel | null;
+  match: LibraryMatch | null;
+  annotationPending: boolean;
   pickedRt: PickedValue | null;
   onPickRt: (picked: PickedValue | null) => void;
   mainPeak: Peak | null;
@@ -43,6 +48,23 @@ interface PlotPanelsProps {
   shown: ShownPanels;
   ppm: number;
   mzTol: number;
+  heights: PanelHeights;
+  onResize: (name: PanelName, height: number | null) => void;
+}
+
+function pickMs2Panel(
+  ms2: SpectrumPanel,
+  mirror: SpectrumPanel | null,
+  match: LibraryMatch | null,
+  annotationPending: boolean,
+  closestMz: number | null,
+): SpectrumPanel {
+  if (closestMz !== null) return match ? addLibraryMatch(ms2, match) : ms2;
+  if (mirror) return mirror;
+  if (annotationPending) {
+    return { ...ms2, status: "loading", lines: [], message: "Searching the library for the MS2 match…" };
+  }
+  return ms2;
 }
 
 function getPickedValue(
@@ -59,6 +81,8 @@ export const PlotPanels = memo(function PlotPanels({
   annotateRt,
   annotate,
   mirror,
+  match,
+  annotationPending,
   pickedRt,
   onPickRt,
   mainPeak,
@@ -66,20 +90,17 @@ export const PlotPanels = memo(function PlotPanels({
   shown,
   ppm,
   mzTol,
+  heights,
+  onResize,
 }: PlotPanelsProps) {
   const dispatch = useAppDispatch();
   const visible: ShownPanels = annotate
     ? shown
     : { chromatogram: true, ms1: false, ms2: false };
   const [pickedMz, setPickedMz] = useState<PickedValue | null>(null);
-  const [heights, setHeights] = useState<Record<PanelName, number | null>>({
-    chromatogram: null,
-    ms1: null,
-    ms2: null,
-  });
 
   function resizer(name: PanelName) {
-    return (height: number | null) => setHeights((current) => ({ ...current, [name]: height }));
+    return (height: number | null) => onResize(name, height);
   }
 
   const freshTarget = readSpectrumTarget(traces, mainPeak, peakPending);
@@ -168,7 +189,7 @@ export const PlotPanels = memo(function PlotPanels({
       {visible.ms2 && (
         <SpectrumPlot
           name="MS2"
-          panel={closestMz === null && mirror ? mirror : ms2}
+          panel={pickMs2Panel(ms2, mirror, match, annotationPending, closestMz)}
           targetMz={closestMz ?? target?.mz ?? null}
           emptyHint="Pick a metabolite with a retention time, or ⇧ + click the chromatogram"
           chosenHeight={heights.ms2}

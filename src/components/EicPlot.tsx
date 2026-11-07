@@ -160,7 +160,7 @@ export const EicPlot = memo(function EicPlot({
   chosenHeight = null,
   onResize,
 }: EicPlotProps) {
-  const { wrap, width, height } = usePlotSize(1, chosenHeight);
+  const { wrap, width, height, plotHeight } = usePlotSize(1, chosenHeight);
   const hasPoints = traces.some((trace) => trace.points.length > 0);
   return (
     <div ref={wrap} className="plot-wrap">
@@ -173,11 +173,11 @@ export const EicPlot = memo(function EicPlot({
             annotateRt={annotateRt}
             markRt={markRt}
             width={width}
-            height={height}
+            height={plotHeight}
             onPickRt={onPickRt}
           />
         ) : (
-          <div className="plot-empty" style={{ height }}>
+          <div className="plot-empty" style={{ height: plotHeight }}>
             No signal in this range
           </div>
         )}
