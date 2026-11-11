@@ -11,6 +11,7 @@ import { PlotPanels, type PickedValue } from "./components/PlotPanels";
 import { PeakTable } from "./components/PeakTable";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { InspectPanel } from "./components/InspectPanel";
+import { ConvertModal } from "./components/ConvertModal";
 import { TraceLegend } from "./components/TraceLegend";
 import { AnnotationPanel } from "./components/AnnotationPanel";
 import { HeightHandle } from "./components/HeightHandle";
@@ -98,6 +99,7 @@ function App() {
   const freshTarget = view.mainReady ? readSpectrumTarget(traces, mainPeak, peakPending) : null;
   const target = useStableByKey(freshTarget, freshTarget?.key ?? "");
   const [pickedRt, setPickedRt] = useState<PickedValue | null>(null);
+  const [convertOpen, setConvertOpen] = useState(false);
   const [plotHeights, setPlotHeights] = useState<PanelHeights>(automaticHeights);
   const [annotationHeight, setAnnotationHeight] = useState(defaultAnnotationHeight);
   const [settingsHeight, setSettingsHeight] = useState<number | null>(null);
@@ -224,6 +226,9 @@ function App() {
               ▶ Run peak picking
             </button>
           )}
+          <button type="button" className="run-button ghost" title="Convert .ion to mzML, or mzML to .ion" onClick={() => setConvertOpen(true)}>
+            ⇄ Convert
+          </button>
           <div className="sheet-buttons">
             <button
               type="button"
@@ -296,6 +301,8 @@ function App() {
         </div>
 
       </main>
+
+      {convertOpen && <ConvertModal onClose={() => setConvertOpen(false)} />}
 
       {state.metabolitesOpen && (
         <ResizeHandle
